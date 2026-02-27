@@ -1,0 +1,122 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="wheelchair">
+
+  <!-- Args (override via launch/yaml) -->
+  <xacro:arg name="base_length" default="0.50"/>    <!-- Chassis length (x)-->
+  <xacro:arg name="base_width"  default="0.50"/>    <!-- Chassis width (y)-->
+  <xacro:arg name="base_height" default="0.50"/>    <!-- Chassis thickness (z)-->
+
+  <!-- base_link pose relative to base_footprint (ground frame) -->
+  <xacro:arg name="base_z" default="0.0"/>    <!-- base_footprint -> base_link z offset -->
+
+  <!-- RealSense root frame mount: camera_link -->
+  <!-- Camera mount pose relative to base_link -->
+  <xacro:arg name="camera_x" default="0.30"/>   <!-- Forward-Backward (x)-->
+  <xacro:arg name="camera_y" default="0.0"/>    <!-- Left-Right (y)-->
+  <xacro:arg name="camera_z" default="0.60"/>   <!-- Up-Down (z)-->
+  <xacro:arg name="camera_roll"  default="0.0"/>    <!-- in rad-->
+  <xacro:arg name="camera_pitch" default="0.0"/>    <!-- in rad-->
+  <xacro:arg name="camera_yaw"   default="0.0"/>    <!-- in rad-->
+
+  <!-- LiDAR mount -->
+  <xacro:arg name="lidar_x" default="0.25"/>
+  <xacro:arg name="lidar_y" default="0.0"/>
+  <xacro:arg name="lidar_z" default="0.85"/>
+  <xacro:arg name="lidar_roll"  default="0.0"/>
+  <xacro:arg name="lidar_pitch" default="0.0"/>
+  <xacro:arg name="lidar_yaw"   default="0.0"/>
+
+  <!-- IMU mount -->
+  <xacro:arg name="imu_x" default="0.00"/>
+  <xacro:arg name="imu_y" default="0.0"/>
+  <xacro:arg name="imu_z" default="0.40"/>
+  <xacro:arg name="imu_roll"  default="0.0"/>
+  <xacro:arg name="imu_pitch" default="0.0"/>
+  <xacro:arg name="imu_yaw"   default="0.0"/>
+
+  <material name="gray"><color rgba="0.6 0.6 0.6 1"/></material>
+  <material name="black"><color rgba="0.1 0.1 0.1 1"/></material>
+
+  <!-- base_footprint: ground-projected frame for navigation (z=0) -->
+  <link name="base_footprint"/>   <!-- Ground reference frame -->
+
+  <!-- base_link: robot body frame -->
+  <!-- Main body frame -->
+  <link name="base_link">
+    <visual>    <!-- RViz visual geometry -->
+      <origin xyz="0 0 ${float(arg('base_height'))/2.0}" rpy="0 0 0"/>
+      <geometry>    <!-- Visual shape -->
+        <box size="${arg('base_length')} ${arg('base_width')} ${arg('base_height')}"/>
+      </geometry>
+      <material name="gray"/>
+    </visual>
+    <collision>   <!-- Collision geometry (planning/sim) -->
+      <origin xyz="0 0 ${float(arg('base_height'))/2.0}" rpy="0 0 0"/>
+      <geometry>    <!-- Collision shape -->
+        <box size="${arg('base_length')} ${arg('base_width')} ${arg('base_height')}"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- base_footprint -> base_link -->
+  <!-- Fixed transform from ground frame to body frame -->
+  <joint name="base_joint" type="fixed">    <!-- Rigid connection (no motion) -->
+    <parent link="base_footprint"/>
+    <child link="base_link"/>
+    <origin xyz="0 0 ${arg('base_z')}" rpy="0 0 0"/>
+  </joint>
+
+  <!-- RealSense root frame: camera_link
+       RealSense topics use frame_id like camera_color_optical_frame.
+       realsense-ros typically publishes TF camera_link -> ... -> camera_color_optical_frame.
+       So we only mount camera_link here to avoid TF conflicts. -->
+  <link name="camera_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><box size="0.09 0.025 0.025"/></geometry>
+      <material name="black"/>
+    </visual>
+  </link>
+
+  <joint name="camera_mount_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="camera_link"/>
+    <origin xyz="${arg('camera_x')} ${arg('camera_y')} ${arg('camera_z')}"
+            rpy="${arg('camera_roll')} ${arg('camera_pitch')} ${arg('camera_yaw')}"/>
+  </joint>
+
+  <!-- LiDAR base (mount point for driver-provided TF chain)-->
+  <link name="ldlidar_base">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+
+      <!-- Referenced LiDAR CAD Design-->
+      <geometry><cylinder radius="0.027" length="0.0348"/></geometry>
+      <material name="black"/>
+    </visual>
+  </link>
+
+  <joint name="lidar_base_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="ldlidar_base"/>
+    <origin xyz="${arg('lidar_x')} ${arg('lidar_y')} ${arg('lidar_z')}"
+            rpy="${arg('lidar_roll')} ${arg('lidar_pitch')} ${arg('lidar_yaw')}"/>
+  </joint>
+
+  <!-- IMU -->
+  <link name="imu_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><box size="0.03 0.02 0.01"/></geometry>
+      <material name="black"/>
+    </visual>
+  </link>
+
+  <joint name="imu_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="imu_link"/>
+    <origin xyz="${arg('imu_x')} ${arg('imu_y')} ${arg('imu_z')}"
+            rpy="${arg('imu_roll')} ${arg('imu_pitch')} ${arg('imu_yaw')}"/>
+  </joint>
+
+</robot>
