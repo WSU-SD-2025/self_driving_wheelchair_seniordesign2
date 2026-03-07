@@ -1,144 +1,228 @@
 #include <Arduino.h>
 
-static const int IMU_RX_PIN = 38;   
-static const int IMU_TX_PIN = 39;
+HardwareSerial IMU(1); // UART1
 
-// UART 1
-HardwareSerial IMU(1);
+// GPIO
+static const int RX_PIN = 38;   // UM7 TX -> ESP32 RX
+static const int TX_PIN = 39;   // UM7 RX -> ESP32 TX
 
-struct Um7Packet {
-  uint8_t addr;
-  uint8_t packet;
-  uint8_t data_len;
-  uint8_t data[64];  
+// Quaternion Scale
+static const float QUAT_SCALE = 29789.09091f;
+
+struct Um7Packet{
+    uint8_t address = 0;
+    uint8_t packet = 0;
+    uint8_t data_len = 0;
+    uint8_t data[256] = {0};
+    uint16_t checksum = 0;
 };
 
+// Receive buffer for incoming UM7 packets
 static uint8_t rx_buffer[512];
-static size_t  rx_len = 0;
+static size_t rx_len = 0;
 
-static bool try_parse_one_packet(uint8_t* buf, size_t len, Um7Packet& out, size_t& bytes_to_discard) {
-  bytes_to_discard = 0;
-  if (len < 7) return false;
-
-  // Search for header 's' 'n' 'p' (0x73 0x6E 0x70)
-  size_t i = 0;
-  for (; i + 2 < len; i++) 
-    if (buf[i] == 's' && buf[i+1] == 'n' && buf[i+2] == 'p') break;
-
-  // No header found -> Discard all
-  if (i + 2 >= len) { bytes_to_discard = len; return false; }
-
-  // Header found but not enough bytes
-  if (len - i < 7) { bytes_to_discard = i; return false; }
-
-  uint8_t packet = buf[i+3];
-  uint8_t addr = buf[i+4];
-
-  bool has_data = (packet >> 7) & 0x01;
-  bool is_batch = (packet >> 6) & 0x01;
-
-  // batch length (register count)
-  uint8_t batch_len = (packet >> 2) & 0x0F;
-
-  size_t data_len = 0;
-  if (has_data) data_len = is_batch ? (4 * (size_t)batch_len) : 4;
-
-  // 'snp' (3 bytes) + packet(1 byte) + addr(1 byte) + data + checksum (2 bytes)
-  size_t packet_len = 7 + data_len;
-
-  // Full packet not yet received
-  if (len - i < packet_len) { bytes_to_discard = i; return false; }
+// Quaternion
+static bool quat_ab_valid = false;
+static bool quat_cd_valid = false;
+static int16_t quat_a_raw = 0, quat_b_raw = 0, quat_c_raw = 0, quat_d_raw = 0;
 
 
+// Quaternion Printing
+static void printQuaternion(){
+  float a = quat_a_raw / QUAT_SCALE;
+  float b = quat_b_raw / QUAT_SCALE;
+  float c = quat_c_raw / QUAT_SCALE;
+  float d = quat_d_raw / QUAT_SCALE;
 
-  // Verify checksum
-  uint16_t sum = (uint16_t)('s' + 'n' + 'p' + packet + addr);
+  float norm = sqrt(a*a + b*b + c*c + d*d);
 
-  for (size_t k = 0; k < data_len; k++) 
-    sum += buf[i + 5 + k];
+  Serial.print("Quaternion: ");
+  Serial.print(a, 6);
+  Serial.print(", ");
+  Serial.print(b, 6);
+  Serial.print(", ");
+  Serial.print(c, 6);
+  Serial.print(", ");
+  Serial.println(d, 6);
+  Serial.print(" | norm = ");
+  Serial.println(norm, 6);
+}
 
-  uint16_t rx_ck = ((uint16_t)buf[i + 5 + data_len] << 8) | buf[i + 6 + data_len];
 
-  // Checksum mismatch -> shift by one byte and try
-  if (sum != rx_ck) {
-    bytes_to_discard = i + 1;
+// Helper
+static inline bool packet_has_data(uint8_t packet){
+    return (packet >> 7) & 0x01;
+}
+
+static inline bool packet_is_batch(uint8_t packet){
+    return (packet >> 6)  & 0x01;
+}
+
+static inline uint8_t packet_batch_len(uint8_t packet){
+    return (packet >> 2) & 0x0F;
+}
+
+static inline int16_t be_to_int16(uint8_t msb, uint8_t lsb){
+    return (int16_t)(msb << 8 | lsb);
+}
+
+
+// Parser
+static bool try_parse_one_packet(Um7Packet& out, size_t& consumed){
+  consumed = 0;
+
+  if(rx_len < 7)  return false;
+
+  // Look for header  ('s', 'n', 'p')
+  size_t start = 0;
+  bool found = false;
+
+  for(; start+2 < rx_len; ++start){
+    if(rx_buffer[start] == 's' && rx_buffer[start+1] == 'n' && rx_buffer[start+2] == 'p'){
+      found = true;
+      break;
+    }
+  }
+
+  if(!found){
+    if(rx_len > 2){
+      memmove(rx_buffer, rx_buffer + rx_len -2, 2);
+      rx_len = 2;
+    }
     return false;
   }
 
-  // Fill output packet structure
+  // Discard garbage before header
+  if(start > 0){
+    memmove(rx_buffer, rx_buffer + start, rx_len - start);
+    rx_len -= start;
+  }
+
+  if(rx_len < 7) return false;
+
+  
+  uint8_t packet = rx_buffer[3];
+  bool has_data = packet_has_data(packet);
+  bool is_batch = packet_is_batch(packet);
+  uint8_t batch_len = packet_batch_len(packet);
+
+  size_t data_len = 0;
+
+  if(has_data)  data_len = is_batch ? (4 * batch_len) : 4;
+
+  size_t total_len = 3 + 1 + 1 + data_len + 2;  // header (s,n,p) + packet + address + data_len + checksum
+  if(rx_len < total_len) return false;
+
+
+  // Checksum
+  uint16_t calc = 0;
+
+  for(size_t i = 0; i < total_len - 2; ++i){
+    calc += rx_buffer[i];
+  }
+
+  uint16_t recv = ((uint16_t)rx_buffer[total_len - 2] << 8 | rx_buffer[total_len - 1]);
+
+  if(calc != recv){
+    memmove(rx_buffer, rx_buffer + 1, rx_len - 1);
+    rx_len -= 1;
+    return false;
+  }
+
+
   out.packet = packet;
-  out.addr = addr;
-  out.data_len = (uint8_t)data_len;
+  out.address = rx_buffer[4];
+  out.data_len = data_len;
+  out.checksum = recv;
 
-  for (size_t k = 0; k < data_len && k < sizeof(out.data); k++) 
-    out.data[k] = buf[i + 5 + k];
+  if(data_len > 0)  memcpy(out.data, rx_buffer + 5, data_len);
 
-  // Confirmed processed bytes
-  bytes_to_discard = i + packet_len;
+  consumed = total_len;
   return true;
 }
 
-static float roll = 0, pitch = 0, yaw = 0;
-static uint32_t last_print_ms = 0;
 
-void setup() {
-  Serial.begin(115200);
-  delay(500);
-  Serial.println("USB SERIAL OK");
+static void handle_packet(const Um7Packet& packet){
+  bool has_data = packet_has_data(packet.packet);
+  bool is_batch = packet_is_batch(packet.packet);
+  uint8_t batch_len = packet_batch_len(packet.packet);
 
-  IMU.begin(115200, SERIAL_8N1, IMU_RX_PIN, IMU_TX_PIN);
-  Serial.println("IMU UART started");
+  if(has_data && is_batch && packet.address == 0x6D && batch_len >= 2 && packet.data_len >= 8){
+    quat_a_raw = be_to_int16(packet.data[0], packet.data[1]);
+    quat_b_raw = be_to_int16(packet.data[2], packet.data[3]);
+    quat_c_raw = be_to_int16(packet.data[4], packet.data[5]);
+    quat_d_raw = be_to_int16(packet.data[6], packet.data[7]);
+
+    quat_ab_valid = true;
+    quat_cd_valid = true;
+    printQuaternion();
+    return;
+  }
+
+
+  if (has_data && !is_batch && packet.address == 0x6D && packet.data_len >= 4){
+    quat_a_raw = be_to_int16(packet.data[0], packet.data[1]);
+    quat_b_raw = be_to_int16(packet.data[2], packet.data[3]);
+
+    quat_ab_valid = true;
+    
+    if(quat_ab_valid && quat_cd_valid){
+      printQuaternion();
+      quat_ab_valid = false;
+      quat_cd_valid = false;
+    }
+    return;
+  }
+
+  if(has_data && !is_batch && packet.address == 0x6E && packet.data_len == 4){
+    quat_c_raw = be_to_int16(packet.data[0], packet.data[1]);
+    quat_d_raw = be_to_int16(packet.data[2], packet.data[3]);
+
+    quat_cd_valid = true;
+
+    if(quat_ab_valid && quat_cd_valid){
+      printQuaternion();
+      quat_ab_valid = false;
+      quat_cd_valid = false;
+    }
+    return;
+  }
 }
 
-void loop() {
-  
-  // Fill RX buffer (prevent overflow)
-  while (IMU.available() && rx_len < sizeof(rx_buffer)) {
-    rx_buffer[rx_len++] = (uint8_t)IMU.read();
-  }
 
-  // Reset buffer if full without valid packet
-  if (rx_len == sizeof(rx_buffer))
-    rx_len = 0;
+void setup(){
+  Serial.begin(115200);
+  delay(500);
 
+  IMU.begin(115200, SERIAL_8N1, RX_PIN, TX_PIN);
+  Serial.println("UM7 start");
+}
 
-  // Parse as many packets as possible
-  while (true) {
-    Um7Packet p;
-    size_t bytes_to_discard = 0;
-    bool ok = try_parse_one_packet(rx_buffer, rx_len, p, bytes_to_discard);
-
-    // Remove processed invalid bytes and shift buffer
-    if (bytes_to_discard > 0) {
-      memmove(rx_buffer, rx_buffer + bytes_to_discard, rx_len - bytes_to_discard);
-      rx_len -= bytes_to_discard;
+void loop(){
+  while(IMU.available()){
+    if(rx_len < sizeof(rx_buffer)){
+      rx_buffer[rx_len++] = (uint8_t)IMU.read();
     }
-
-    if (!ok) break;
-
-
-
-    // 0x70: Roll & Pitch (16-bits signed)
-    if (p.addr == 0x70 && p.data_len >= 4) {
-      int16_t roll_raw  = (int16_t)((p.data[0] << 8) | p.data[1]);
-      int16_t pitch_raw = (int16_t)((p.data[2] << 8) | p.data[3]);
-
-      // Scale factor (datasheet)
-      roll  = (float)roll_raw  / 91.02222f;
-      pitch = (float)pitch_raw / 91.02222f;
-    }
-
-    // 0x71: Yaw (16-bits signed)
-    if (p.addr == 0x71 && p.data_len >= 2) {
-      int16_t yaw_raw = (int16_t)((p.data[0] << 8) | p.data[1]);
-      yaw = (float)yaw_raw / 91.02222f;
+    else{
+      rx_len = 0;
     }
   }
 
-  // Print at 50Hz (every 20ms)
-  uint32_t now = millis();
-  if (now - last_print_ms >= 20) {
-    last_print_ms = now;
-    Serial.printf("RPY: %.2f, %.2f, %.2f\n", roll, pitch, yaw);
+  while(true){
+    Um7Packet packet;
+    size_t consumed = 0;
+
+    if(!try_parse_one_packet(packet, consumed)) break;
+
+    handle_packet(packet);
+
+    if(consumed > 0 && consumed <= rx_len){
+      memmove(rx_buffer, rx_buffer + consumed, rx_len - consumed);
+      rx_len -= consumed;
+    }
+    else{
+      rx_len = 0;
+      break;
+    }
   }
 }
