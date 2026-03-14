@@ -202,7 +202,7 @@ local_costmap:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         observation_sources: scan
         scan:
-          topic: /scan
+          topic: /ldlidar_node/scan
           data_type: LaserScan
           marking: True
           clearing: True
@@ -247,7 +247,7 @@ global_costmap:
         enabled: True
         observation_sources: scan
         scan:
-          topic: /scan
+          topic: /ldlidar_node/scan
           data_type: "LaserScan"
           marking: True
           clearing: True
@@ -404,7 +404,7 @@ collision_monitor:
     observation_sources: ["scan"]
     scan:
       type: "scan"
-      topic: "/scan"
+      topic: "/ldlidar_node/scan"
 
 
 
@@ -415,7 +415,7 @@ collision_monitor:
 lifecycle_manager_navigation:
   ros__parameters:
     autostart: true
-    node_names: ['controller_server', 'smoother_server', 'planner_server', 'behavior_server', 'bt_navigator', 'waypoint_follower', 'velocity_smoother', 'collision_monitor']
+    node_names: ['ldlidar_node', 'controller_server', 'smoother_server', 'planner_server', 'behavior_server', 'bt_navigator', 'waypoint_follower', 'velocity_smoother', 'collision_monitor']
     bond_timeout: 4.0
     attempt_respawn_reconnection: true
     bond_respawn_max_duration: 10.0
