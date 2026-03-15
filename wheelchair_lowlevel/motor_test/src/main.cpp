@@ -25,7 +25,7 @@ const float X_CENTER_V = 2.50f;
 const float Y_CENTER_V = 2.50f;
 
 //Forward
-const float Y_FORWARD_V = 4.00f;
+const float Y_FORWARD_V = 4.23f;
 const float X_FORWARD_V = 0.00f;
 
 // Backward
@@ -151,5 +151,9 @@ void setup() {
 }
 
 void loop() {
-  
+
+  setNeutral();
+  delay(3000);
+  setForwardTest();
+  delay(3000);
 }
