@@ -1,0 +1,14 @@
+sensor_bridge:
+  ros__parameters:
+    port: /dev/ttyACM0
+    baud: 115200
+    publish_tf: false
+
+    left_cpr: 715.0
+    right_cpr: 1200.0
+    wheel_radius: 0.171
+    wheel_separation: 0.575
+
+    odom_frame: odom
+    base_frame: base_link
+    imu_frame: imu_link
