@@ -5,6 +5,20 @@ from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 from launch.substitutions import Command
 
+
+# TODO: Replace all placeholder values with real measured dimensions after hardware mounting
+
+# TODO: Update base_length, base_width, base_height using real wheelchair measurements
+
+# TODO: Update sensor positions (camera, lidar, imu) with real measured offsets from base_link
+# Do not use arbitary coordinates
+# All sensor positions must be relative to base_link (wheel midpoint)
+
+# TODO: Add sensor orientation (rpy) after mounting
+# Especially important for IMU and LiDAR
+
+
+
 def load_yaml(path: str):
     with open(path, 'r') as f:
         return yaml.safe_load(f)
@@ -27,7 +41,7 @@ def generate_launch_description():
     imu_xyz       = sensors.get('imu_xyz',       [0.50, 0.50, 0.50])
 
     # base_z: keep 0 for now; later you can set to wheel radius, etc.
-    base_z = wc.get('base_z', 0.0) 
+    base_z = wc.get('base_z', 0.171) 
 
     xacro_cmd = [
         'xacro ', xacro_file,

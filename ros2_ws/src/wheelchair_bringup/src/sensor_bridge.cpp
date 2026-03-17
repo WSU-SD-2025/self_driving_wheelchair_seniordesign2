@@ -148,8 +148,8 @@ void SensorBridge::timerCallback(){
     std::string line;
 
     while(readLine(line)){
-        if(line == "ENCODER_READY"){
-            RCLCPP_INFO(this->get_logger(), "ESP32 encoder ready");
+        if(line == "SENSORS_READY"){
+            RCLCPP_INFO(this->get_logger(), "ESP32 sensors ready");
             continue;
         }
 

@@ -25,6 +25,7 @@ setup(
     entry_points={
         'console_scripts': [
             'cmd_vel_to_serial = cmdvel_bridge.cmd_vel_to_serial:main',
+            'roboclaw_wheel_bridge = cmdvel_bridge.roboclaw_wheel_bridge:main',
         ],
     },
 )

@@ -21,24 +21,36 @@ const uint8_t BLUE_CH = MCP4728_CHANNEL_B;
 
 
 // Neutral voltage
-const float X_CENTER_V = 2.50f;
-const float Y_CENTER_V = 2.50f;
+const float X_CENTER_V = 2.47f;
+const float Y_CENTER_V = 2.49f;
 
-//Forward
+//Forward (max speed)
 const float Y_FORWARD_V = 4.23f;
 const float X_FORWARD_V = 0.00f;
 
 // Backward
-const float Y_BACKWARD_V = 1.50f;
+const float Y_BACKWARD_V = 1.17f;
 const float X_BACKWARD_V = 0.00f;
 
 // Right
 const float Y_RIGHT_V = 0.00f;
-const float X_RIGHT_V = 4.00f;
+const float X_RIGHT_V = 4.18f;
 
 // Left
 const float Y_LEFT_V = 0.00f;
-const float X_LEFT_V = 0.90f;
+const float X_LEFT_V = 0.81f;
+
+
+// Timing / Ramp Settings
+const int BOOT_NEUTRAL_HOLD_MS = 10000;
+const int HOLD_PEAK_MS = 2000;
+const int RAMP_STEPS = 80;
+const int RAMP_DELAY_MS = 25;
+
+
+// Current output
+float current_y = Y_CENTER_V;
+float current_x = X_CENTER_V;
 
 
 
@@ -58,64 +70,100 @@ void writeChannelVoltage(uint8_t channel, float voltage) {
   uint16_t code = voltageToCode(voltage);
 
   switch (channel) {
-    case 0:
+    case MCP4728_CHANNEL_A:
       mcp.setChannelValue(MCP4728_CHANNEL_A, code);
       break;
-    case 1:
+    case MCP4728_CHANNEL_B:
       mcp.setChannelValue(MCP4728_CHANNEL_B, code);
       break;
-    case 2:
+    case MCP4728_CHANNEL_C:
       mcp.setChannelValue(MCP4728_CHANNEL_C, code);
       break;
-    case 3:
+    case MCP4728_CHANNEL_D:
       mcp.setChannelValue(MCP4728_CHANNEL_D, code);
       break;
   }
-
-  Serial.print("CH");
-  Serial.print(channel);
-  Serial.print(" voltage = ");
-  Serial.print(voltage, 3);
-  Serial.print(" V, code = ");
-  Serial.println(code);
 }
 
 // Write both X and Y together
 void writeXYVoltages(float y_voltage, float x_voltage){
-    writeChannelVoltage(YELLOW_CH, y_voltage);
-    writeChannelVoltage(BLUE_CH, x_voltage);
+  writeChannelVoltage(YELLOW_CH, y_voltage);
+  writeChannelVoltage(BLUE_CH, x_voltage);
+
+  current_y = y_voltage;
+  current_x = x_voltage;
+
+  Serial.print("Y = ");
+  Serial.print(y_voltage, 3);
+  Serial.print(" V, X = ");
+  Serial.print(x_voltage, 3);
+  Serial.println(" V");
 }
 
 // Stop wheelchair = center on both axes
 void setNeutral() {
-    Serial.println("Neutral");
-    writeXYVoltages(Y_CENTER_V, X_CENTER_V);
+  writeXYVoltages(Y_CENTER_V, X_CENTER_V);
 }
 
-// Forward test
-void setForwardTest() {
-    Serial.println("Forward test");
-    writeXYVoltages(Y_FORWARD_V, X_FORWARD_V);
+
+// Ramp from current position to target position
+void rampTo(float target_y, float target_x, int steps, int delay_ms){
+  float start_y = current_y;
+  float start_x = current_x;
+
+  for(int i = 1; i<=steps; i++){
+    float t = (float)i / (float) steps;
+    float y = start_y + (target_y - start_y) * t;
+    float x = start_x + (target_x - start_x) * t;
+    writeXYVoltages(y, x);
+    delay(delay_ms);
+  }
 }
 
-// Backward test
-void setBackwardTest() {
-    Serial.println("Backward test");
-    writeXYVoltages(Y_BACKWARD_V, X_BACKWARD_V);
+
+void moveOnce(float target_y, float target_x, const char* label){
+  Serial.println();
+  Serial.print("Command: ");
+  Serial.println(label);
+
+  Serial.println("Ramp up...");
+  rampTo(target_y, target_x, RAMP_STEPS, RAMP_DELAY_MS);
+
+  Serial.println("Hold peak...");
+  delay(HOLD_PEAK_MS);
+
+  Serial.println("Ramp down to neutral...");
+  rampTo(Y_CENTER_V, X_CENTER_V, RAMP_STEPS, RAMP_DELAY_MS);
+
+  Serial.println("Back to neutral");
+  setNeutral();
 }
 
-// Right test
-void setRightTest() {
-    Serial.println("Right test");
-    writeXYVoltages(Y_RIGHT_V, X_RIGHT_V);
+
+void printMenu(){
+  Serial.println();
+  Serial.println("=== Commands ===");
+  Serial.println("w : forward once");
+  Serial.println("s : backward once");
+  Serial.println("a : left once");
+  Serial.println("d : right once");
+  Serial.println("n : force neutral");
+  Serial.println("================");
+  Serial.println();
 }
 
-// Left test
-void setLeftTest() {
-    Serial.println("Left test");
-    writeXYVoltages(Y_LEFT_V, X_LEFT_V);
-}
 
+void holdNeutralForBoot(int hold_ms){
+  Serial.println("Holding neutral for boot...");
+  unsigned long start = millis();
+
+  while(millis() - start < (unsigned long)hold_ms){
+    setNeutral();
+    delay(100);
+  }
+
+  Serial.println("Boot neutral hold complete.");
+}
 
 
 
@@ -123,37 +171,49 @@ void setLeftTest() {
 
 void setup() {
   Serial.begin(115200);
-  delay(1000);
+  delay(200);
 
-  Serial.println("MCP4728 connected.");
+  Serial.println("Initializing ESP32 + MCP4728 DAC ...");
 
   Wire.begin(SDA_PIN, SCL_PIN);
 
-  if (!mcp.begin()) {
-    Serial.println("MCP4728 not found. Check wiring.");
-    while (1) delay(10);
+  if(!mcp.begin()){
+    Serial.println("MCP4728 not found");
+    while(1){
+      delay(10);
+    }
   }
 
-  // Start with neutral for safety
   setNeutral();
-  Serial.println("Set neutral.");
-  delay(3000);
+  Serial.println("Neutral output started.");
+  
+  holdNeutralForBoot(BOOT_NEUTRAL_HOLD_MS);
 
-  // Short forward pulse
-  setForwardTest();
-  Serial.println("Applying forward command");
-  delay(5000);
-
-  // Return to Neutral
-  setNeutral();
-  Serial.println("Returned to neutral");
-  delay(3000);
+  printMenu();
 }
 
 void loop() {
+  if(Serial.available() > 0){
+    char cmd = Serial.read();
 
-  setNeutral();
-  delay(3000);
-  setForwardTest();
-  delay(3000);
+    if(cmd == 'w' || cmd == 'W')
+      moveOnce(Y_FORWARD_V, X_FORWARD_V, "FORWARD");
+
+    else if(cmd == 's' || cmd == 'S')
+      moveOnce(Y_BACKWARD_V, X_BACKWARD_V, "BACKWARD");
+
+    else if(cmd == 'a' || cmd == 'A')
+      moveOnce(Y_LEFT_V, X_LEFT_V, "LEFT");
+
+    else if(cmd == 'd' || cmd == 'D')
+      moveOnce(Y_RIGHT_V, X_RIGHT_V, "RIGHT");
+
+    else if(cmd == 'n' || cmd == 'N')
+      setNeutral();
+
+    while(Serial.available() > 0)
+      Serial.read();
+
+    printMenu();
+  }
 }

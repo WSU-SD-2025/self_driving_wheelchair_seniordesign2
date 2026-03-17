@@ -5,25 +5,25 @@
   <xacro:arg name="base_length" default="0.50"/>
   <xacro:arg name="base_width"  default="0.50"/>
   <xacro:arg name="base_height" default="0.50"/>
-  <xacro:arg name="base_z" default="0.0"/>
+  <xacro:arg name="base_z" default="0.171"/>
 
-  <xacro:arg name="camera_x" default="0.30"/>
+  <xacro:arg name="camera_x" default="0.0"/>
   <xacro:arg name="camera_y" default="0.0"/>
-  <xacro:arg name="camera_z" default="0.60"/>
+  <xacro:arg name="camera_z" default="0.0"/>
   <xacro:arg name="camera_roll"  default="0.0"/>
   <xacro:arg name="camera_pitch" default="0.0"/>
   <xacro:arg name="camera_yaw"   default="0.0"/>
 
-  <xacro:arg name="lidar_x" default="0.25"/>
+  <xacro:arg name="lidar_x" default="0.0"/>
   <xacro:arg name="lidar_y" default="0.0"/>
-  <xacro:arg name="lidar_z" default="0.85"/>
+  <xacro:arg name="lidar_z" default="0.0"/>
   <xacro:arg name="lidar_roll"  default="0.0"/>
   <xacro:arg name="lidar_pitch" default="0.0"/>
   <xacro:arg name="lidar_yaw"   default="0.0"/>
 
-  <xacro:arg name="imu_x" default="0.00"/>
+  <xacro:arg name="imu_x" default="0.0"/>
   <xacro:arg name="imu_y" default="0.0"/>
-  <xacro:arg name="imu_z" default="0.40"/>
+  <xacro:arg name="imu_z" default="0.0"/>
   <xacro:arg name="imu_roll"  default="0.0"/>
   <xacro:arg name="imu_pitch" default="0.0"/>
   <xacro:arg name="imu_yaw"   default="0.0"/>
