@@ -17,8 +17,8 @@ const uint8_t YELLOW_CH = MCP4728_CHANNEL_A;
 const uint8_t BLUE_CH   = MCP4728_CHANNEL_B;
 
 // Initial neutral guess
-float x_voltage = 2.47f;
-float y_voltage = 2.49f;
+float x_voltage = 2.68f;
+float y_voltage = 2.69f;
 
 // Step size for manual tuning
 float step_size = 0.10f;

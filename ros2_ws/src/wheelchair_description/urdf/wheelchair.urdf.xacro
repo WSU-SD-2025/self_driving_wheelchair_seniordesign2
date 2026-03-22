@@ -1,19 +1,17 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="wheelchair">
 
-  <!-- Args -->
+  <!-- ========================================================= -->
+  <!-- Arguments                                                 -->
+  <!-- ========================================================= -->
+
+  <!-- Base body -->
   <xacro:arg name="base_length" default="0.50"/>
   <xacro:arg name="base_width"  default="0.50"/>
   <xacro:arg name="base_height" default="0.50"/>
-  <xacro:arg name="base_z" default="0.171"/>
+  <xacro:arg name="base_z"      default="0.171"/>
 
-  <xacro:arg name="camera_x" default="0.0"/>
-  <xacro:arg name="camera_y" default="0.0"/>
-  <xacro:arg name="camera_z" default="0.0"/>
-  <xacro:arg name="camera_roll"  default="0.0"/>
-  <xacro:arg name="camera_pitch" default="0.0"/>
-  <xacro:arg name="camera_yaw"   default="0.0"/>
-
+  <!-- LiDAR mount -->
   <xacro:arg name="lidar_x" default="0.0"/>
   <xacro:arg name="lidar_y" default="0.0"/>
   <xacro:arg name="lidar_z" default="0.0"/>
@@ -21,6 +19,7 @@
   <xacro:arg name="lidar_pitch" default="0.0"/>
   <xacro:arg name="lidar_yaw"   default="0.0"/>
 
+  <!-- IMU mount -->
   <xacro:arg name="imu_x" default="0.0"/>
   <xacro:arg name="imu_y" default="0.0"/>
   <xacro:arg name="imu_z" default="0.0"/>
@@ -28,18 +27,21 @@
   <xacro:arg name="imu_pitch" default="0.0"/>
   <xacro:arg name="imu_yaw"   default="0.0"/>
 
-  <!-- Properties from args -->
+  <!-- Front caster wheels -->
+  <xacro:arg name="front_caster_x"      default="0.30"/>
+  <xacro:arg name="front_caster_y"      default="0.20"/>
+  <xacro:arg name="front_caster_z"      default="0.05"/>
+  <xacro:arg name="front_caster_radius" default="0.05"/>
+  <xacro:arg name="front_caster_width"  default="0.03"/>
+
+  <!-- ========================================================= -->
+  <!-- Properties                                                -->
+  <!-- ========================================================= -->
+
   <xacro:property name="base_length_v" value="$(arg base_length)"/>
   <xacro:property name="base_width_v"  value="$(arg base_width)"/>
   <xacro:property name="base_height_v" value="$(arg base_height)"/>
   <xacro:property name="base_z_v"      value="$(arg base_z)"/>
-
-  <xacro:property name="camera_x_v" value="$(arg camera_x)"/>
-  <xacro:property name="camera_y_v" value="$(arg camera_y)"/>
-  <xacro:property name="camera_z_v" value="$(arg camera_z)"/>
-  <xacro:property name="camera_roll_v"  value="$(arg camera_roll)"/>
-  <xacro:property name="camera_pitch_v" value="$(arg camera_pitch)"/>
-  <xacro:property name="camera_yaw_v"   value="$(arg camera_yaw)"/>
 
   <xacro:property name="lidar_x_v" value="$(arg lidar_x)"/>
   <xacro:property name="lidar_y_v" value="$(arg lidar_y)"/>
@@ -55,8 +57,27 @@
   <xacro:property name="imu_pitch_v" value="$(arg imu_pitch)"/>
   <xacro:property name="imu_yaw_v"   value="$(arg imu_yaw)"/>
 
-  <material name="gray"><color rgba="0.6 0.6 0.6 1"/></material>
-  <material name="black"><color rgba="0.1 0.1 0.1 1"/></material>
+  <xacro:property name="front_caster_x_v"      value="$(arg front_caster_x)"/>
+  <xacro:property name="front_caster_y_v"      value="$(arg front_caster_y)"/>
+  <xacro:property name="front_caster_z_v"      value="$(arg front_caster_z)"/>
+  <xacro:property name="front_caster_radius_v" value="$(arg front_caster_radius)"/>
+  <xacro:property name="front_caster_width_v"  value="$(arg front_caster_width)"/>
+
+  <!-- ========================================================= -->
+  <!-- Materials                                                 -->
+  <!-- ========================================================= -->
+
+  <material name="gray">
+    <color rgba="0.6 0.6 0.6 1"/>
+  </material>
+
+  <material name="black">
+    <color rgba="0.1 0.1 0.1 1"/>
+  </material>
+
+  <!-- ========================================================= -->
+  <!-- Base                                                      -->
+  <!-- ========================================================= -->
 
   <link name="base_footprint"/>
 
@@ -68,6 +89,7 @@
       </geometry>
       <material name="gray"/>
     </visual>
+
     <collision>
       <origin xyz="0 0 ${float(base_height_v)/2.0}" rpy="0 0 0"/>
       <geometry>
@@ -82,40 +104,37 @@
     <origin xyz="0 0 ${base_z_v}" rpy="0 0 0"/>
   </joint>
 
-  <link name="camera_link">
+  <!-- ========================================================= -->
+  <!-- LiDAR                                                     -->
+  <!-- ========================================================= -->
+
+  <link name="lidar_link">
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry><box size="0.09 0.025 0.025"/></geometry>
+      <geometry>
+        <cylinder radius="0.027" length="0.0348"/>
+      </geometry>
       <material name="black"/>
     </visual>
   </link>
 
-  <joint name="camera_mount_joint" type="fixed">
+  <joint name="lidar_joint" type="fixed">
     <parent link="base_link"/>
-    <child link="camera_link"/>
-    <origin xyz="${camera_x_v} ${camera_y_v} ${camera_z_v}"
-            rpy="${camera_roll_v} ${camera_pitch_v} ${camera_yaw_v}"/>
-  </joint>
-
-  <link name="ldlidar_base">
-    <visual>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry><cylinder radius="0.027" length="0.0348"/></geometry>
-      <material name="black"/>
-    </visual>
-  </link>
-
-  <joint name="lidar_base_joint" type="fixed">
-    <parent link="base_link"/>
-    <child link="ldlidar_base"/>
+    <child link="lidar_link"/>
     <origin xyz="${lidar_x_v} ${lidar_y_v} ${lidar_z_v}"
             rpy="${lidar_roll_v} ${lidar_pitch_v} ${lidar_yaw_v}"/>
   </joint>
 
+  <!-- ========================================================= -->
+  <!-- IMU                                                       -->
+  <!-- ========================================================= -->
+
   <link name="imu_link">
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry><box size="0.03 0.02 0.01"/></geometry>
+      <geometry>
+        <box size="0.03 0.02 0.01"/>
+      </geometry>
       <material name="black"/>
     </visual>
   </link>
@@ -125,6 +144,54 @@
     <child link="imu_link"/>
     <origin xyz="${imu_x_v} ${imu_y_v} ${imu_z_v}"
             rpy="${imu_roll_v} ${imu_pitch_v} ${imu_yaw_v}"/>
+  </joint>
+
+  <!-- ========================================================= -->
+  <!-- Front caster wheels (passive, fixed in URDF)             -->
+  <!-- ========================================================= -->
+
+  <link name="front_left_caster_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+      <geometry>
+        <cylinder radius="${front_caster_radius_v}" length="${front_caster_width_v}"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+      <geometry>
+        <cylinder radius="${front_caster_radius_v}" length="${front_caster_width_v}"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <joint name="front_left_caster_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="front_left_caster_link"/>
+    <origin xyz="${front_caster_x_v} ${front_caster_y_v} ${front_caster_z_v}" rpy="0 0 0"/>
+  </joint>
+
+  <link name="front_right_caster_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+      <geometry>
+        <cylinder radius="${front_caster_radius_v}" length="${front_caster_width_v}"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+      <geometry>
+        <cylinder radius="${front_caster_radius_v}" length="${front_caster_width_v}"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <joint name="front_right_caster_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="front_right_caster_link"/>
+    <origin xyz="${front_caster_x_v} ${-front_caster_y_v} ${front_caster_z_v}" rpy="0 0 0"/>
   </joint>
 
 </robot>
