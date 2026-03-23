@@ -9,7 +9,7 @@ const int RIGHT_ENCODER_B = 17;
 
 // Direction Sign Correction
 // Need real-life experiment to determine which sign is correct for each encoder
-const int LEFT_SIGN = -1;
+const int LEFT_SIGN = 1;
 const int RIGHT_SIGN = 1;
 
 // Encoder Counters

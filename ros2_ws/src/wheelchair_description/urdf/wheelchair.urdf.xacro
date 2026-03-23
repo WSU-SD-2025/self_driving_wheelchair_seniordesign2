@@ -6,33 +6,33 @@
   <!-- ========================================================= -->
 
   <!-- Base body -->
-  <xacro:arg name="base_length" default="0.50"/>
-  <xacro:arg name="base_width"  default="0.50"/>
-  <xacro:arg name="base_height" default="0.50"/>
+  <xacro:arg name="base_length" default="0.650"/>
+  <xacro:arg name="base_width"  default="0.447"/>
+  <xacro:arg name="base_height" default="0.260"/>
   <xacro:arg name="base_z"      default="0.171"/>
 
   <!-- LiDAR mount -->
-  <xacro:arg name="lidar_x" default="0.0"/>
-  <xacro:arg name="lidar_y" default="0.0"/>
-  <xacro:arg name="lidar_z" default="0.0"/>
+  <xacro:arg name="lidar_x" default="0.680"/>
+  <xacro:arg name="lidar_y" default="0.2175"/>
+  <xacro:arg name="lidar_z" default="0.471"/>
   <xacro:arg name="lidar_roll"  default="0.0"/>
-  <xacro:arg name="lidar_pitch" default="0.0"/>
+  <xacro:arg name="lidar_pitch" default="0.0"/> <!-- TODO: Figure out if pitch should be 6.9 deg up -->
   <xacro:arg name="lidar_yaw"   default="0.0"/>
 
   <!-- IMU mount -->
-  <xacro:arg name="imu_x" default="0.0"/>
+  <xacro:arg name="imu_x" default="0.325"/>
   <xacro:arg name="imu_y" default="0.0"/>
-  <xacro:arg name="imu_z" default="0.0"/>
+  <xacro:arg name="imu_z" default="0.342"/>
   <xacro:arg name="imu_roll"  default="0.0"/>
   <xacro:arg name="imu_pitch" default="0.0"/>
   <xacro:arg name="imu_yaw"   default="0.0"/>
 
   <!-- Front caster wheels -->
-  <xacro:arg name="front_caster_x"      default="0.30"/>
-  <xacro:arg name="front_caster_y"      default="0.20"/>
-  <xacro:arg name="front_caster_z"      default="0.05"/>
-  <xacro:arg name="front_caster_radius" default="0.05"/>
-  <xacro:arg name="front_caster_width"  default="0.03"/>
+  <xacro:arg name="front_caster_x"      default="0.650"/>
+  <xacro:arg name="front_caster_y"      default="0.2235"/>
+  <xacro:arg name="front_caster_z"      default="-0.079"/>
+  <xacro:arg name="front_caster_radius" default="0.092"/>
+  <xacro:arg name="front_caster_width"  default="0.058"/>
 
   <!-- ========================================================= -->
   <!-- Properties                                                -->

@@ -21,8 +21,8 @@ const int RIGHT_ENCODER_A = 16;
 const int RIGHT_ENCODER_B = 17;
 
 // Encoder Direction Sign
-const int LEFT_SIGN = -1;
-const int RIGHT_SIGN = -1;
+const int LEFT_SIGN = 1;
+const int RIGHT_SIGN = 1;
 
 // Encoder counters
 volatile long left_encoder_count = 0;
