@@ -5,93 +5,107 @@
 
 Adafruit_MCP4728 mcp;
 
-// GPIO Pins for Wheelchair
+// ============================= GPIO / Hardware =============================
 const int SDA_PIN = 8;
 const int SCL_PIN = 9;
 
 const float DAC_VREF = 5.0f;
 
-const uint8_t YELLOW_CH = MCP4728_CHANNEL_A;
-const uint8_t BLUE_CH = MCP4728_CHANNEL_B;
+const uint8_t YELLOW_CH = MCP4728_CHANNEL_A;  // Y
+const uint8_t BLUE_CH   = MCP4728_CHANNEL_B;  // X
 
-// GPIO pins for Encoders
-const int LEFT_ENCODER_A = 4;
-const int LEFT_ENCODER_B = 5;
+// Encoder pins
+const int LEFT_ENCODER_A  = 4;
+const int LEFT_ENCODER_B  = 5;
 const int RIGHT_ENCODER_A = 16;
 const int RIGHT_ENCODER_B = 17;
 
-// Encoder Direction Sign
-const int LEFT_SIGN = 1;
+// Encoder sign (keep as current)
+const int LEFT_SIGN  = 1;
 const int RIGHT_SIGN = 1;
 
 // Encoder counters
-volatile long left_encoder_count = 0;
+volatile long left_encoder_count  = 0;
 volatile long right_encoder_count = 0;
 
-// Voltage Limits
+// ============================= Voltage Settings ============================
 const float MIN_VOLTAGE = 1.0f;
 const float MAX_VOLTAGE = 4.2f;
 
-// Neutral Center Voltage
 const float X_CENTER = 2.6915f;
-const float Y_CENTER = 2.689f;
+const float Y_CENTER = 2.6890f;
 
-// Experiment timing
-const unsigned long BOOT_NEUTRAL_HOLD_MS = 10000; // Hold neutral for 10 seconds on boot
-const unsigned long LOG_PERIOD_MS = 20;           // Log every 20ms (50Hz)
-const unsigned long VOLTAGE_UPDATE_MS = 100;      // Update voltage every 100ms
-const unsigned long HOLD_TIME_MS = 5000;          // Hold each position for 5 seconds
+// Step test voltage levels
+const float STEP_CENTER_X = 2.5f;
+const float STEP_CENTER_Y = 2.5f;
+const float STEP_HIGH     = 3.5f;
+const float STEP_LOW      = 1.5f;
 
-// Experiment stepping
-const float RAMP_STEP = 0.01f;
-const float TARGET_STEP = 0.25f;
+// ============================= Timing Settings =============================
+const unsigned long BOOT_NEUTRAL_HOLD_MS = 5000;
 
-// Runtime Voltage
+const unsigned long LOG_PERIOD_MS     = 20;   // 50 Hz
+const unsigned long CONTROL_PERIOD_MS = 20;   // 50 Hz
+
+const unsigned long TARGET_HOLD_MS      = 3000;  // ramp target hold
+const unsigned long NEUTRAL_HOLD_MS     = 2000;  // between ramp motions
+const unsigned long STEP_HOLD_MS        = 4000;  // hold after instant step
+const unsigned long STEP_NEUTRAL_HOLD_MS= 2000;  // hold at 2.5 after step return
+
+const float RAMP_RATE_V_PER_S = 0.20f;
+
+// ============================= Runtime Voltage =============================
 float x_voltage = X_CENTER;
 float y_voltage = Y_CENTER;
 
-// Phase enum
+// ============================= Phase Enum ==================================
 enum PhaseType {
-    PHASE_BOOT_NEUTRAL = 0,
-    PHASE_X_ONLY = 1,
-    PHASE_Y_ONLY = 2,
-    PHASE_BOTH = 3,
-    PHASE_OPPOSITE = 4,
-    PHASE_DONE = 99
+    PHASE_BOOT_NEUTRAL   = 0,
+    PHASE_X_ONLY         = 1,
+    PHASE_Y_ONLY         = 2,
+    PHASE_BOTH_SAME      = 3,
+    PHASE_BOTH_OPPOSITE  = 4,
+    PHASE_DONE           = 99
 };
 
-// Step definition
-struct TestStep {
+// ============================= Segment Type ================================
+enum SegmentMode {
+    SEG_RAMP = 0,
+    SEG_STEP = 1
+};
+
+// ============================= Segment Plan ================================
+struct Segment {
     int phase;
     int step_idx;
+    int mode;                // SEG_RAMP or SEG_STEP
     float target_x;
     float target_y;
+    unsigned long hold_ms;
 };
 
-const int MAX_STEPS = 400;
-TestStep steps[MAX_STEPS];
-int total_steps = 0;
-int current_step_index = 0;
+const int MAX_SEGMENTS = 80;
+Segment segments[MAX_SEGMENTS];
+int total_segments = 0;
+int current_segment_index = 0;
 
-// State variables
+// Segment runtime state
 bool experiment_started = false;
-bool target_reached = false;
+bool segment_target_reached = false;
+bool step_applied = false;
+unsigned long segment_hold_start_ms = 0;
 
-float target_x = X_CENTER;
-float target_y = Y_CENTER;
-
+// Timers
 unsigned long boot_start_time = 0;
 unsigned long last_log_time = 0;
-unsigned long last_voltage_update_time = 0;
-unsigned long hold_start_time = 0;
+unsigned long last_control_time = 0;
 
-// ================================= ENCODER ==================================
-// Encoder ISR
+// ================================ ENCODER ==================================
 void IRAM_ATTR updateLeftEncoder() {
     if (digitalRead(LEFT_ENCODER_B) != digitalRead(LEFT_ENCODER_A))
-        left_encoder_count += LEFT_SIGN; // Forward
+        left_encoder_count += LEFT_SIGN;
     else
-        left_encoder_count -= LEFT_SIGN; // Backward
+        left_encoder_count -= LEFT_SIGN;
 }
 
 void IRAM_ATTR updateRightEncoder() {
@@ -131,26 +145,19 @@ long readRightEncoderCount() {
     interrupts();
     return count;
 }
-// ============================================================================
 
-
-
-
-// ================================ Wheelchair =================================
-// Clamp
-float clamp(float v) {
+// ================================ DAC / Output =============================
+float clampVoltage(float v) {
     if (v < MIN_VOLTAGE) return MIN_VOLTAGE;
     if (v > MAX_VOLTAGE) return MAX_VOLTAGE;
     return v;
 }
 
-// Convert voltage to 12-bit DAC code
 uint16_t voltageToBit(float voltage) {
-    voltage = clamp(voltage);
+    voltage = clampVoltage(voltage);
     return (uint16_t)((voltage / DAC_VREF) * 4095.0f);
 }
 
-// Write DAC channel
 void writeDAC(uint8_t channel, float voltage) {
     uint16_t dac_value = voltageToBit(voltage);
 
@@ -170,27 +177,31 @@ void writeDAC(uint8_t channel, float voltage) {
     }
 }
 
-// Write Y and X
 void writeXYVoltages(float y, float x) {
-    y_voltage = clamp(y);
-    x_voltage = clamp(x);
+    y_voltage = clampVoltage(y);
+    x_voltage = clampVoltage(x);
 
-    writeDAC(YELLOW_CH, y_voltage);
-    writeDAC(BLUE_CH, x_voltage);
+    writeDAC(YELLOW_CH, y_voltage); // Y
+    writeDAC(BLUE_CH,   x_voltage); // X
 }
 
-// Apply current output voltage
 void applyCurrentVoltages() {
     writeXYVoltages(y_voltage, x_voltage);
 }
 
-// Set center neutral
 void setNeutral() {
-    y_voltage = Y_CENTER;
     x_voltage = X_CENTER;
+    y_voltage = Y_CENTER;
     applyCurrentVoltages();
 }
 
+void setStepNeutral() {
+    x_voltage = STEP_CENTER_X;
+    y_voltage = STEP_CENTER_Y;
+    applyCurrentVoltages();
+}
+
+// ================================ Logging ==================================
 void printCSVHeader() {
     Serial.println("time_ms,phase,step_idx,x_v,y_v,left_count,right_count");
 }
@@ -209,8 +220,8 @@ void logCSVRow(int phase, int step_idx) {
     Serial.println(rc);
 }
 
-// Math helpers
-bool nearlyEqual(float a, float b, float eps = 1e-5f) {
+// ================================ Helpers ==================================
+bool nearlyEqual(float a, float b, float eps = 0.002f) {
     return fabs(a - b) < eps;
 }
 
@@ -220,155 +231,207 @@ float rampToward(float current, float target, float step) {
     return current - step;
 }
 
-// Step plan
-void addStep(int phase, int step, float tx, float ty) {
-    if (total_steps >= MAX_STEPS) return;
+// ================================ Plan Builder =============================
+void addSegment(int phase, int step_idx, int mode, float tx, float ty, unsigned long hold_ms) {
+    if (total_segments >= MAX_SEGMENTS) return;
 
-    steps[total_steps].phase = phase;
-    steps[total_steps].step_idx = step;
-    steps[total_steps].target_x = clamp(tx);
-    steps[total_steps].target_y = clamp(ty);
-    total_steps++;
+    segments[total_segments].phase    = phase;
+    segments[total_segments].step_idx = step_idx;
+    segments[total_segments].mode     = mode;
+    segments[total_segments].target_x = clampVoltage(tx);
+    segments[total_segments].target_y = clampVoltage(ty);
+    segments[total_segments].hold_ms  = hold_ms;
+    total_segments++;
 }
 
-void addCenterReturn(int phase, int step) {
-    addStep(phase, step, X_CENTER, Y_CENTER);
+// X only step test around 2.5
+void addXOnlyStepTest(int phase, int &s) {
+    addSegment(phase, s++, SEG_STEP, STEP_HIGH, STEP_CENTER_Y, STEP_HOLD_MS);
+    addSegment(phase, s++, SEG_STEP, STEP_CENTER_X, STEP_CENTER_Y, STEP_NEUTRAL_HOLD_MS);
+    addSegment(phase, s++, SEG_STEP, STEP_LOW, STEP_CENTER_Y, STEP_HOLD_MS);
+    addSegment(phase, s++, SEG_STEP, STEP_CENTER_X, STEP_CENTER_Y, STEP_NEUTRAL_HOLD_MS);
 }
 
-void buildSingleAxisSweepX() {
-    int step = 0;
-
-    for (float tx = X_CENTER + TARGET_STEP; tx <= MAX_VOLTAGE + 1e-6f; tx += TARGET_STEP) {
-        addStep(PHASE_X_ONLY, step++, tx, Y_CENTER);
-        addCenterReturn(PHASE_X_ONLY, step++);
-    }
-
-    for (float tx = X_CENTER - TARGET_STEP; tx >= MIN_VOLTAGE - 1e-6f; tx -= TARGET_STEP) {
-        addStep(PHASE_X_ONLY, step++, tx, Y_CENTER);
-        addCenterReturn(PHASE_X_ONLY, step++);
-    }
+// Y only step test around 2.5
+void addYOnlyStepTest(int phase, int &s) {
+    addSegment(phase, s++, SEG_STEP, STEP_CENTER_X, STEP_HIGH, STEP_HOLD_MS);
+    addSegment(phase, s++, SEG_STEP, STEP_CENTER_X, STEP_CENTER_Y, STEP_NEUTRAL_HOLD_MS);
+    addSegment(phase, s++, SEG_STEP, STEP_CENTER_X, STEP_LOW, STEP_HOLD_MS);
+    addSegment(phase, s++, SEG_STEP, STEP_CENTER_X, STEP_CENTER_Y, STEP_NEUTRAL_HOLD_MS);
 }
 
-void buildSingleAxisSweepY() {
-    int step = 0;
-
-    for (float ty = Y_CENTER + TARGET_STEP; ty <= MAX_VOLTAGE + 1e-6f; ty += TARGET_STEP) {
-        addStep(PHASE_Y_ONLY, step++, X_CENTER, ty);
-        addCenterReturn(PHASE_Y_ONLY, step++);
-    }
-
-    for (float ty = Y_CENTER - TARGET_STEP; ty >= MIN_VOLTAGE - 1e-6f; ty -= TARGET_STEP) {
-        addStep(PHASE_Y_ONLY, step++, X_CENTER, ty);
-        addCenterReturn(PHASE_Y_ONLY, step++);
-    }
+// Both same direction step test
+void addBothSameStepTest(int phase, int &s) {
+    addSegment(phase, s++, SEG_STEP, STEP_HIGH, STEP_HIGH, STEP_HOLD_MS);
+    addSegment(phase, s++, SEG_STEP, STEP_CENTER_X, STEP_CENTER_Y, STEP_NEUTRAL_HOLD_MS);
+    addSegment(phase, s++, SEG_STEP, STEP_LOW, STEP_LOW, STEP_HOLD_MS);
+    addSegment(phase, s++, SEG_STEP, STEP_CENTER_X, STEP_CENTER_Y, STEP_NEUTRAL_HOLD_MS);
 }
 
-void buildBothSweep() {
-    int step = 0;
-
-    for (float d = TARGET_STEP; ; d += TARGET_STEP) {
-        float xp = X_CENTER + d;
-        float yp = Y_CENTER + d;
-        if (xp > MAX_VOLTAGE || yp > MAX_VOLTAGE) break;
-        addStep(PHASE_BOTH, step++, xp, yp);
-        addCenterReturn(PHASE_BOTH, step++);
-    }
-
-    for (float d = TARGET_STEP; ; d += TARGET_STEP) {
-        float xp = X_CENTER - d;
-        float yp = Y_CENTER - d;
-        if (xp < MIN_VOLTAGE || yp < MIN_VOLTAGE) break;
-        addStep(PHASE_BOTH, step++, xp, yp);
-        addCenterReturn(PHASE_BOTH, step++);
-    }
-}
-
-void buildBothOppositeSweep() {
-    int step = 0;
-
-    for (float d = TARGET_STEP; ; d += TARGET_STEP) {
-        float xp = X_CENTER + d;
-        float yp = Y_CENTER - d;
-        if (xp > MAX_VOLTAGE || yp < MIN_VOLTAGE) break;
-        addStep(PHASE_OPPOSITE, step++, xp, yp);
-        addCenterReturn(PHASE_OPPOSITE, step++);
-    }
-
-    for (float d = TARGET_STEP; ; d += TARGET_STEP) {
-        float xp = X_CENTER - d;
-        float yp = Y_CENTER + d;
-        if (xp < MIN_VOLTAGE || yp > MAX_VOLTAGE) break;
-        addStep(PHASE_OPPOSITE, step++, xp, yp);
-        addCenterReturn(PHASE_OPPOSITE, step++);
-    }
+// Opposite direction step test
+void addBothOppositeStepTest(int phase, int &s) {
+    addSegment(phase, s++, SEG_STEP, STEP_LOW,  STEP_HIGH, STEP_HOLD_MS);
+    addSegment(phase, s++, SEG_STEP, STEP_CENTER_X, STEP_CENTER_Y, STEP_NEUTRAL_HOLD_MS);
+    addSegment(phase, s++, SEG_STEP, STEP_HIGH, STEP_LOW,  STEP_HOLD_MS);
+    addSegment(phase, s++, SEG_STEP, STEP_CENTER_X, STEP_CENTER_Y, STEP_NEUTRAL_HOLD_MS);
 }
 
 void buildExperimentPlan() {
-    total_steps = 0;
-    buildSingleAxisSweepX();
-    buildSingleAxisSweepY();
-    buildBothSweep();
-    buildBothOppositeSweep();
+    total_segments = 0;
+    int s = 0;
+
+    // ---------------------------------------------------------------------
+    // 1) X only ramp: Y fixed at center
+    //    X -> 4.2 -> neutral -> 1.0 -> neutral
+    // ---------------------------------------------------------------------
+    addSegment(PHASE_X_ONLY, s++, SEG_RAMP, MAX_VOLTAGE, Y_CENTER, TARGET_HOLD_MS);
+    addSegment(PHASE_X_ONLY, s++, SEG_RAMP, X_CENTER,    Y_CENTER, NEUTRAL_HOLD_MS);
+    addSegment(PHASE_X_ONLY, s++, SEG_RAMP, MIN_VOLTAGE, Y_CENTER, TARGET_HOLD_MS);
+    addSegment(PHASE_X_ONLY, s++, SEG_RAMP, X_CENTER,    Y_CENTER, NEUTRAL_HOLD_MS);
+
+    // X only step improvement
+    addXOnlyStepTest(PHASE_X_ONLY, s);
+
+    // ---------------------------------------------------------------------
+    // 2) Y only ramp: X fixed at center
+    //    Y -> 4.2 -> neutral -> 1.0 -> neutral
+    // ---------------------------------------------------------------------
+    addSegment(PHASE_Y_ONLY, s++, SEG_RAMP, X_CENTER, MAX_VOLTAGE, TARGET_HOLD_MS);
+    addSegment(PHASE_Y_ONLY, s++, SEG_RAMP, X_CENTER, Y_CENTER,    NEUTRAL_HOLD_MS);
+    addSegment(PHASE_Y_ONLY, s++, SEG_RAMP, X_CENTER, MIN_VOLTAGE, TARGET_HOLD_MS);
+    addSegment(PHASE_Y_ONLY, s++, SEG_RAMP, X_CENTER, Y_CENTER,    NEUTRAL_HOLD_MS);
+
+    // Y only step improvement
+    addYOnlyStepTest(PHASE_Y_ONLY, s);
+
+    // ---------------------------------------------------------------------
+    // 3) Both same direction
+    //    (X,Y) -> (4.2,4.2) -> neutral -> (1.0,1.0) -> neutral
+    // ---------------------------------------------------------------------
+    addSegment(PHASE_BOTH_SAME, s++, SEG_RAMP, MAX_VOLTAGE, MAX_VOLTAGE, TARGET_HOLD_MS);
+    addSegment(PHASE_BOTH_SAME, s++, SEG_RAMP, X_CENTER,    Y_CENTER,    NEUTRAL_HOLD_MS);
+    addSegment(PHASE_BOTH_SAME, s++, SEG_RAMP, MIN_VOLTAGE, MIN_VOLTAGE, TARGET_HOLD_MS);
+    addSegment(PHASE_BOTH_SAME, s++, SEG_RAMP, X_CENTER,    Y_CENTER,    NEUTRAL_HOLD_MS);
+
+    // Both same step improvement
+    addBothSameStepTest(PHASE_BOTH_SAME, s);
+
+    // ---------------------------------------------------------------------
+    // 4) Opposite directions
+    //    Case A: Y -> 4.2, X -> 1.0
+    //    neutral
+    //    Case B: Y -> 1.0, X -> 4.2
+    //    neutral
+    // ---------------------------------------------------------------------
+    addSegment(PHASE_BOTH_OPPOSITE, s++, SEG_RAMP, MIN_VOLTAGE, MAX_VOLTAGE, TARGET_HOLD_MS);
+    addSegment(PHASE_BOTH_OPPOSITE, s++, SEG_RAMP, X_CENTER,    Y_CENTER,    NEUTRAL_HOLD_MS);
+    addSegment(PHASE_BOTH_OPPOSITE, s++, SEG_RAMP, MAX_VOLTAGE, MIN_VOLTAGE, TARGET_HOLD_MS);
+    addSegment(PHASE_BOTH_OPPOSITE, s++, SEG_RAMP, X_CENTER,    Y_CENTER,    NEUTRAL_HOLD_MS);
+
+    // Opposite step improvement
+    addBothOppositeStepTest(PHASE_BOTH_OPPOSITE, s);
 }
 
-// Step progression
-void startCurrentStep() {
-    if (current_step_index >= total_steps) return;
-
-    target_x = steps[current_step_index].target_x;
-    target_y = steps[current_step_index].target_y;
-    target_reached = false;
-    hold_start_time = 0;
-
-    Serial.print("# START_STEP,phase=");
-    Serial.print(steps[current_step_index].phase);
+// ================================ Segment Exec =============================
+void printSegmentStart(const Segment& seg) {
+    Serial.print("# START_SEGMENT,phase=");
+    Serial.print(seg.phase);
     Serial.print(",step_idx=");
-    Serial.print(steps[current_step_index].step_idx);
+    Serial.print(seg.step_idx);
+    Serial.print(",mode=");
+    Serial.print(seg.mode == SEG_RAMP ? "RAMP" : "STEP");
     Serial.print(",target_x=");
-    Serial.print(target_x, 4);
+    Serial.print(seg.target_x, 4);
     Serial.print(",target_y=");
-    Serial.println(target_y, 4);
+    Serial.print(seg.target_y, 4);
+    Serial.print(",hold_ms=");
+    Serial.println(seg.hold_ms);
 }
 
-void advanceToNextStep() {
-    current_step_index++;
-    if (current_step_index < total_steps) {
-        startCurrentStep();
+void startCurrentSegment() {
+    if (current_segment_index >= total_segments) return;
+
+    segment_target_reached = false;
+    step_applied = false;
+    segment_hold_start_ms = 0;
+
+    printSegmentStart(segments[current_segment_index]);
+}
+
+void advanceToNextSegment() {
+    current_segment_index++;
+
+    if (current_segment_index < total_segments) {
+        startCurrentSegment();
     } else {
         Serial.println("# EXPERIMENT_DONE");
     }
 }
 
-void updateExperiment() {
-    if (current_step_index >= total_steps) return;
+void updateRampSegment(Segment &seg, unsigned long now) {
+    float dt = CONTROL_PERIOD_MS / 1000.0f;
+    float ramp_step = RAMP_RATE_V_PER_S * dt;
 
-    unsigned long now = millis();
+    if (!segment_target_reached) {
+        x_voltage = rampToward(x_voltage, seg.target_x, ramp_step);
+        y_voltage = rampToward(y_voltage, seg.target_y, ramp_step);
+        applyCurrentVoltages();
 
-    if (now - last_voltage_update_time >= VOLTAGE_UPDATE_MS) {
-        last_voltage_update_time = now;
-
-        if (!target_reached) {
-            x_voltage = rampToward(x_voltage, target_x, RAMP_STEP);
-            y_voltage = rampToward(y_voltage, target_y, RAMP_STEP);
+        if (nearlyEqual(x_voltage, seg.target_x) && nearlyEqual(y_voltage, seg.target_y)) {
+            x_voltage = seg.target_x;
+            y_voltage = seg.target_y;
             applyCurrentVoltages();
 
-            if (nearlyEqual(x_voltage, target_x) && nearlyEqual(y_voltage, target_y)) {
-                target_reached = true;
-                hold_start_time = now;
+            segment_target_reached = true;
+            segment_hold_start_ms = now;
 
-                Serial.print("# TARGET_REACHED,phase=");
-                Serial.print(steps[current_step_index].phase);
-                Serial.print(",step_idx=");
-                Serial.println(steps[current_step_index].step_idx);
-            }
-        } else {
-            if (now - hold_start_time >= HOLD_TIME_MS) {
-                advanceToNextStep();
-            }
+            Serial.print("# TARGET_REACHED,phase=");
+            Serial.print(seg.phase);
+            Serial.print(",step_idx=");
+            Serial.println(seg.step_idx);
+        }
+    } else {
+        if (now - segment_hold_start_ms >= seg.hold_ms) {
+            advanceToNextSegment();
         }
     }
 }
 
+void updateStepSegment(Segment &seg, unsigned long now) {
+    if (!step_applied) {
+        x_voltage = seg.target_x;
+        y_voltage = seg.target_y;
+        applyCurrentVoltages();
+
+        step_applied = true;
+        segment_target_reached = true;
+        segment_hold_start_ms = now;
+
+        Serial.print("# STEP_APPLIED,phase=");
+        Serial.print(seg.phase);
+        Serial.print(",step_idx=");
+        Serial.println(seg.step_idx);
+    } else {
+        if (now - segment_hold_start_ms >= seg.hold_ms) {
+            advanceToNextSegment();
+        }
+    }
+}
+
+void updateExperiment() {
+    if (current_segment_index >= total_segments) return;
+
+    unsigned long now = millis();
+    Segment &seg = segments[current_segment_index];
+
+    if (seg.mode == SEG_RAMP) {
+        updateRampSegment(seg, now);
+    } else {
+        updateStepSegment(seg, now);
+    }
+}
+
+// ================================= Setup ===================================
 void setup() {
     Serial.begin(115200);
     while (!Serial) delay(10);
@@ -378,61 +441,68 @@ void setup() {
     Wire.begin(SDA_PIN, SCL_PIN);
 
     if (!mcp.begin()) {
-        Serial.println("MCP4728 not found.");
+        Serial.println("# ERROR: MCP4728 not found.");
         while (1) {
             delay(10);
         }
     }
 
-    setNeutral();
-
     initEncoders();
     resetEncoders();
 
-    printCSVHeader();
+    setNeutral();
 
+    printCSVHeader();
     buildExperimentPlan();
 
     boot_start_time = millis();
     last_log_time = millis();
-    last_voltage_update_time = millis();
+    last_control_time = millis();
 
     Serial.println("# BOOT_NEUTRAL_START");
 }
 
+// ================================= Loop ====================================
 void loop() {
     unsigned long now = millis();
 
+    // Logging
     if (now - last_log_time >= LOG_PERIOD_MS) {
         last_log_time = now;
 
         if (!experiment_started) {
             logCSVRow(PHASE_BOOT_NEUTRAL, -1);
-        }
-        else if (current_step_index < total_steps) {
-            logCSVRow(steps[current_step_index].phase, steps[current_step_index].step_idx);
-        }
-        else {
+        } else if (current_segment_index < total_segments) {
+            logCSVRow(
+                segments[current_segment_index].phase,
+                segments[current_segment_index].step_idx
+            );
+        } else {
             logCSVRow(PHASE_DONE, -1);
         }
     }
 
+    // Boot neutral hold
     if (!experiment_started) {
         setNeutral();
 
         if (now - boot_start_time >= BOOT_NEUTRAL_HOLD_MS) {
             experiment_started = true;
-            current_step_index = 0;
-            startCurrentStep();
+            current_segment_index = 0;
+            startCurrentSegment();
             Serial.println("# BOOT_NEUTRAL_END");
         }
         return;
     }
 
-    if (current_step_index < total_steps) {
-        updateExperiment();
-    }
-    else {
-        setNeutral();
+    // Control update
+    if (now - last_control_time >= CONTROL_PERIOD_MS) {
+        last_control_time = now;
+
+        if (current_segment_index < total_segments) {
+            updateExperiment();
+        } else {
+            setNeutral();
+        }
     }
 }
