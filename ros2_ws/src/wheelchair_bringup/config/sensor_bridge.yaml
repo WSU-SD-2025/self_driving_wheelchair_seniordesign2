@@ -12,3 +12,8 @@ sensor_bridge:
     odom_frame: odom
     base_frame: base_link
     imu_frame: imu_link
+
+    cmd_vel_topic: /cmd_vel
+    max_linear: 1.0
+    max_angular: 1.0
+    cmd_timeout: 0.5

@@ -4,7 +4,6 @@
 
 class CmdVelReceiver {
     private:
-        String rx_buffer;
         float vRef;
         float wRef;
         unsigned long lastCmdMs;
@@ -13,8 +12,8 @@ class CmdVelReceiver {
         CmdVelReceiver();
 
         void begin();
-        void update();
         bool parsePacket(const String& packet, float& vOut, float& wOut);
+        bool processLine(const String& line);
         float getVRef() const;
         float getWRef() const;
         unsigned long getLastCmdMs() const;

@@ -34,7 +34,7 @@ const float X_MIN_V = 1.0f;
 const float X_MAX_V = 4.2f;
 
 // Timing
-const unsigned long CMD_TIMEOUT_MS = 500;
+const unsigned long CMD_TIMEOUT_MS = 1000;
 const unsigned long ENCODER_INTERVAL_MS = 50; //20Hz
 const unsigned long LOG_INTERVAL_MS = 100;
 
@@ -79,8 +79,8 @@ void setup(){
     }
   }
 
-  wheelchair.setCommands(1.5f, 1.5f);
-  wheelchair.setVoltageSpans(0.80f, 0.80f);
+  wheelchair.setCommands(1.0f, 1.0f);
+  wheelchair.setVoltageSpans(0.90f, 0.70f);
   wheelchair.setDeadbands(0.12f, 0.12f);
 
   last_log_time = millis();

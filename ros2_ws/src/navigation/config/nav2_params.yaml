@@ -100,7 +100,7 @@ controller_server:
 
       motion_model: "DiffDrive"
 
-      vx_max: 1.5
+      vx_max: 1.0
       vx_min: 0.0
       vy_max: 0.0
       wz_max: 1.0

@@ -1,9 +1,8 @@
 #include "CmdVelReceiver.h"
 
-CmdVelReceiver::CmdVelReceiver(): rx_buffer(""), vRef(0.0f), wRef(0.0f), lastCmdMs(0){}
+CmdVelReceiver::CmdVelReceiver(): vRef(0.0f), wRef(0.0f), lastCmdMs(0){}
 
 void CmdVelReceiver::begin(){
-    rx_buffer = "";
     vRef = 0.0f;
     wRef = 0.0f;
     lastCmdMs = millis();
@@ -25,32 +24,20 @@ bool CmdVelReceiver::parsePacket(const String& packet, float& vOut, float& wOut)
     return true;
 }
 
-void CmdVelReceiver::update(){
-    while(Serial.available() > 0){
-        char c = (char)Serial.read();
+bool CmdVelReceiver::processLine(const String& line){
+    float newV = 0.0f;
+    float newW = 0.0f;
 
-        if(c == '\n'){
-            float newV = 0.0f;
-            float newW = 0.0f;
-
-            if(parsePacket(rx_buffer, newV, newW)){
-                vRef = newV;
-                wRef = newW;
-                lastCmdMs = millis();
-            }
-
-            rx_buffer = "";
-        }
-
-        else{
-            rx_buffer += c;
-
-            if(rx_buffer.length() > 64){
-                rx_buffer = "";
-            }
-        }
+    if(!parsePacket(line, newV, newW)){
+        return false;
     }
+
+    vRef = newV;
+    wRef = newW;
+    lastCmdMs = millis();
+    return true;
 }
+
 
 float CmdVelReceiver::getVRef() const{
     return vRef;

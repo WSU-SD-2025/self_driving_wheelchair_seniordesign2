@@ -18,11 +18,11 @@ class CmdVelToSerial(Node):
         self.declare_parameter('serial_port', '/dev/ttyACM0')
         self.declare_parameter('baud_rate', 115200)
 
-        self.declare_parameter('max_linear', 1.5)
-        self.declare_parameter('max_angular', 1.5)
+        self.declare_parameter('max_linear', 1.0)
+        self.declare_parameter('max_angular', 1.0)
 
-        self.declare_parameter('send_hz', 30.0)
-        self.declare_parameter('cmd_timeout', 0.5)
+        self.declare_parameter('send_hz', 20.0)
+        self.declare_parameter('cmd_timeout', 1.0)
 
         self.declare_parameter('log_dir', str(Path.home() / 'self_driving_wheelchair' / 'log'))
         self.declare_parameter('csv_prefix', 'wheelchair_log')

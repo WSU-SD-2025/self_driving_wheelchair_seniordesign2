@@ -6,7 +6,7 @@ WheelchairController::WheelchairController(
     float x_min_v, float x_max_v):
 sda_pin(sda), scl_pin(scl), y_channel(y_ch), x_channel(x_ch),
 y_neutral(y_neutral_v), x_neutral(x_neutral_v), y_min(y_min_v), y_max(y_max_v),
-x_min(x_min_v), x_max(x_max_v), max_linear_cmd(1.5f), max_angular_cmd(1.5f),
+x_min(x_min_v), x_max(x_max_v), max_linear_cmd(1.0f), max_angular_cmd(1.0f),
 y_span(0.80f), x_span(0.80f), y_deadband(0.12f), x_deadband(0.12f) {}
 
 float WheelchairController::clampValue(float v, float lo, float hi){

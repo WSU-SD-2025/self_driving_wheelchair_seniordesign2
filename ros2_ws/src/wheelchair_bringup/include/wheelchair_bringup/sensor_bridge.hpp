@@ -1,12 +1,16 @@
-#pragma once
+#ifndef WHEELCHAIR_BRINGUP__SENSOR_BRIDGE_HPP_
+#define WHEELCHAIR_BRINGUP__SENSOR_BRIDGE_HPP_
 
+#include <memory>
 #include <string>
 #include <vector>
-#include "rclcpp/rclcpp.hpp"
-#include "nav_msgs/msg/odometry.hpp"
-#include "sensor_msgs/msg/imu.hpp"
-#include "geometry_msgs/msg/transform_stamped.hpp"
-#include "tf2_ros/transform_broadcaster.h"
+
+#include <rclcpp/rclcpp.hpp>
+#include <nav_msgs/msg/odometry.hpp>
+#include <sensor_msgs/msg/imu.hpp>
+#include <geometry_msgs/msg/twist.hpp>
+#include <geometry_msgs/msg/transform_stamped.hpp>
+#include <tf2_ros/transform_broadcaster.h>
 
 
 class SensorBridge : public rclcpp::Node{
@@ -25,6 +29,11 @@ class SensorBridge : public rclcpp::Node{
 
         void publishOdom(double left_count, double right_count, double time_ms);
         void publishImu(double qx, double qy, double qz, double qw, double wx, double wy, double wz, double ax, double ay, double az);
+
+        void cmdVelCallback(const geometry_msgs::msg::Twist::SharedPtr msg);
+        void writeCmdPacket(double linear, double angular);
+        double clamp(double x, double lo, double hi);
+
 
         int serial_fd_;
         std::string serial_buffer_;
@@ -55,4 +64,16 @@ class SensorBridge : public rclcpp::Node{
         double x_;
         double y_;
         double theta_;
+
+
+        // cmd_vel bridge
+        rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_sub_;
+        std::string cmd_vel_topic_;
+        double latest_linear_;
+        double latest_angular_;
+        double max_linear_;
+        double max_angular_;
+        double cmd_timeout_;
+        rclcpp::Time last_cmd_time_;
 };
+#endif

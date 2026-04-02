@@ -74,14 +74,19 @@ void EncoderReader::updateVelocitiesFromSnapshot(const EncoderSnapshot& prev_sna
     unsigned long dt_ms = curr_snap.time_ms - prev_snap.time_ms;
     if(dt_ms == 0) return;
 
+    constexpr float SPEED_SCALE_DIV = 6.218f;
+
     float dt = dt_ms / 1000.0f;
     float wheelchair_circumference = 2.0f * PI * wheel_radius;
 
     float left_revs = (float) dL / left_cpr;
     float right_revs = (float) dR / right_cpr;
 
-    vL = (left_revs * wheelchair_circumference) / dt;
-    vR = (right_revs * wheelchair_circumference) / dt;
+    float vL_encoder = (left_revs * wheelchair_circumference) / dt;
+    float vR_encoder = (right_revs * wheelchair_circumference) / dt;
+
+    vL = vL_encoder / SPEED_SCALE_DIV;
+    vR = vR_encoder / SPEED_SCALE_DIV;
 
     vBody = (vL + vR) / 2.0f;
     wBody = (vR - vL) / wheel_separation;

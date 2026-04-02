@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <termios.h>
 #include <unistd.h>
+#include <iomanip>
 
 SensorBridge::SensorBridge()
     : Node("sensor_bridge"),
@@ -24,7 +25,12 @@ SensorBridge::SensorBridge()
       prev_time_ms_(0.0),
       x_(0.0),
       y_(0.0),
-      theta_(0.0)
+      theta_(0.0),
+      latest_linear_(0.0),
+      latest_angular_(0.0),
+      max_linear_(1.0),
+      max_angular_(1.0),
+      cmd_timeout_(0.5)
 {
     // Declare parameters
     this->declare_parameter<std::string>("port", "/dev/ttyACM0");
@@ -40,6 +46,11 @@ SensorBridge::SensorBridge()
     this->declare_parameter<std::string>("base_frame", "base_link");
     this->declare_parameter<std::string>("imu_frame", "imu_link");
 
+    this->declare_parameter<std::string>("cmd_vel_topic", "/cmd_vel");
+    this->declare_parameter<double>("max_linear", 1.0);
+    this->declare_parameter<double>("max_angular", 1.0);
+    this->declare_parameter<double>("cmd_timeout", 0.5);
+
     // Get parameter
     port_ = this->get_parameter("port").as_string();
     baud_ = this->get_parameter("baud").as_int();
@@ -54,10 +65,24 @@ SensorBridge::SensorBridge()
     base_frame_ = this->get_parameter("base_frame").as_string();
     imu_frame_ = this->get_parameter("imu_frame").as_string();
 
+    cmd_vel_topic_ = this->get_parameter("cmd_vel_topic").as_string();
+    max_linear_ = this->get_parameter("max_linear").as_double();
+    max_angular_ = this->get_parameter("max_angular").as_double();
+    cmd_timeout_ = this->get_parameter("cmd_timeout").as_double();
+
     // Create publishers
     odom_pub_ = this->create_publisher<nav_msgs::msg::Odometry>("/odom", 20);
     imu_pub_ = this->create_publisher<sensor_msgs::msg::Imu>("/imu/data", 50);
     tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
+
+    // Create Subscriber
+    cmd_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
+        cmd_vel_topic_,
+        10,
+        std::bind(&SensorBridge::cmdVelCallback, this, std::placeholders::_1)
+    );
+
+    last_cmd_time_ = this->now();
 
     if(!openSerial())   throw std::runtime_error("Failed to open serial port");
 
@@ -67,11 +92,12 @@ SensorBridge::SensorBridge()
     );
 
     RCLCPP_INFO(this->get_logger(), "SensorBridge node started on %s", port_.c_str());
+    RCLCPP_INFO(this->get_logger(), "Subscribed to %s", cmd_vel_topic_.c_str());
 }
 
 
 bool SensorBridge::openSerial(){
-    serial_fd_ = open(port_.c_str(), O_RDONLY | O_NOCTTY | O_NONBLOCK);
+    serial_fd_ = open(port_.c_str(), O_RDWR | O_NOCTTY | O_NONBLOCK);
 
     if(serial_fd_ < 0){
         RCLCPP_ERROR(this->get_logger(), "Could not open serial port %s", port_.c_str());
@@ -144,7 +170,44 @@ std::vector<std::string> SensorBridge::split(const std::string& s, char delimite
 }
 
 
+double SensorBridge::clamp(double x, double lo, double hi){
+    return std::max(lo, std::min(x, hi));
+}
+
+
+void SensorBridge::cmdVelCallback(const geometry_msgs::msg::Twist::SharedPtr msg){
+    latest_linear_ = msg->linear.x;
+    latest_angular_ = msg->angular.z;
+    last_cmd_time_ = this->now();
+}
+
+
+void SensorBridge::writeCmdPacket(double linear, double angular){
+    if(serial_fd_ < 0) return;
+
+    std::ostringstream oss;
+    oss << "<"
+        << std::fixed << std::setprecision(3)
+        << linear << ","
+        << angular
+        << ">\n";
+    
+    const std::string packet = oss.str();
+    ssize_t n = write(serial_fd_, packet.c_str(), packet.size());
+
+    if(n < 0){
+        RCLCPP_WARN_THROTTLE(
+            this->get_logger(),
+            *this->get_clock(),
+            2000,
+            "Failed to write to serial port"
+        );
+    }
+}
+
+
 void SensorBridge::timerCallback(){
+    // 1. Read incoming Sensor lines
     std::string line;
 
     while(readLine(line)){
@@ -160,6 +223,19 @@ void SensorBridge::timerCallback(){
             handleImuLine(line);
         }
     }
+
+    // 2. Write latest cmd_vel to ESP32
+    double elapsed = (this->now() - last_cmd_time_).seconds();
+
+    double v_cmd = 0.0;
+    double w_cmd = 0.0;
+
+    if(elapsed <= cmd_timeout_){
+        v_cmd = clamp(latest_linear_, -max_linear_, max_linear_);
+        w_cmd = clamp(latest_angular_, -max_angular_, max_angular_);
+    }
+
+    writeCmdPacket(v_cmd, w_cmd);
 }
 
 
