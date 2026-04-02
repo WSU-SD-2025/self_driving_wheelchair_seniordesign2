@@ -32,7 +32,7 @@ const float WHEEL_SEPARATION = 0.575f;
 
 // Voltage settings
 const float Y_NEUTRAL = 2.689f;
-const float X_NEUTRAL = 2.6951f;
+const float X_NEUTRAL = 2.705f;
 
 const float Y_MIN_V = 1.0f;
 const float Y_MAX_V = 4.2f;

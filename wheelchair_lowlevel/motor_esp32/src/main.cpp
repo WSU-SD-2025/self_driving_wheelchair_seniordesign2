@@ -7,8 +7,8 @@
 const int SDA_PIN = 8;
 const int SCL_PIN = 9;
 
-const int LEFT_ENCODER_A = 4;
-const int LEFT_ENCODER_B = 5;
+const int LEFT_ENCODER_A = 1;
+const int LEFT_ENCODER_B = 2;
 const int RIGHT_ENCODER_A = 16;
 const int RIGHT_ENCODER_B = 17;
 
@@ -26,7 +26,7 @@ const float WHEEL_SEPARATION = 0.575f;
 const float Y_NEUTRAL = 2.689f;
 
 // X Neutral: 2.69 -> 2.70 (Trying to find the actual neutral)
-const float X_NEUTRAL = 2.6951f;
+const float X_NEUTRAL = 2.705f;
 
 const float Y_MIN_V = 1.0f;
 const float Y_MAX_V = 4.2f;
