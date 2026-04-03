@@ -267,8 +267,8 @@ void setup(){
     // Begin(Kp, Ki, Kd, out_min, out_max)
     // PidY: Linear velocity correction, max correction of +/- 0.25V
     // PidW: Angular velocity correction, max correction of +/- 0.20V
-    pidY.begin(0.10f, 0.01f, 0.0f, -0.20f, 0.20f);
-    pidW.begin(0.12f, 0.01f, 0.0f, -0.18f, 0.18f);
+    pidY.begin(0.35f, 0.08f, 0.0f, -0.20f, 0.20f);
+    pidW.begin(0.18f, 0.02f, 0.0f, -0.18f, 0.18f);
     pidHeading.begin(1.20f, 0.00f, 0.00f, -HEADING_HOLD_MAX_W, HEADING_HOLD_MAX_W);
     pidWAssist.begin(0.10f, 0.00f, 0.00f, -X_ASSIST_LIMIT, X_ASSIST_LIMIT);
 
@@ -354,6 +354,7 @@ void loop(){
             (fabsf(v_ref) >= HEADING_HOLD_ENABLED_SPEED);
 
         bool heading_hold_allowed = using_imu_for_w && nearly_straight;
+        bool turn_command_active = fabsf(w_ref) >= HEADING_HOLD_ENABLE_W;
 
         // Feedforward from LookUp Table
         float y_ff_raw = lookupYVoltage(v_ref);
@@ -374,7 +375,7 @@ void loop(){
         }
 
         else{
-          // Always do linear-speed tracking
+          // Linear-speed tracking
           if(fabsf(v_ref) > SPEED_ENABLE_THRESHOLD)
               y_corr_v = pidY.update(v_ref, v_meas, dt);
           else{
@@ -382,11 +383,26 @@ void loop(){
               pidY.reset();
           }
 
-          // Always do angular-rate tracking
-          x_corr_v = -pidW.update(w_ref, w_meas_for_control, dt);
+          x_corr_v = 0.0f;
           x_assist_v = 0.0f;
 
-          if(heading_hold_allowed){
+          // Case 1: Turning or Curved driving -> Use pidW, turn off heading hold
+          if(turn_command_active){
+              x_corr_v = -pidW.update(w_ref, w_meas_for_control, dt);
+              heading_hold_active = false;
+              heading_error = 0.0f;
+              heading_hold_w_ref = 0.0f;
+              pidHeading.reset();
+              pidWAssist.reset();
+
+              if(using_imu_for_w)   control_mode = MODE_TRACKING_IMU_W;
+              else                  control_mode = MODE_TRACKING_ENCODER_W;
+          }
+
+          // Case 2: Driving straight -> Turn off pidW, use heading hold only
+          else if(heading_hold_allowed){
+              pidW.reset();
+
               if(!heading_hold_active){
                   heading_ref = yaw_meas;
                   heading_hold_active = true;
@@ -394,21 +410,22 @@ void loop(){
                   pidWAssist.reset();
               }
 
-
               heading_error = wrapAngle(heading_ref - yaw_meas);
 
               // Outer loop: heading error -> desired yaw rate assist
               heading_hold_w_ref = pidHeading.update(0.0f, -heading_error, dt);
 
               // Inner loop assist: desired yaw rate -> x voltage assist
-              float assist_cmd = heading_hold_w_ref * HEADING_ASSIST_BLEND; 
+              float assist_cmd = heading_hold_w_ref * HEADING_ASSIST_BLEND;
               x_assist_v = -pidWAssist.update(assist_cmd, w_meas_for_control, dt);
               x_assist_v = clampf_local(x_assist_v, -X_ASSIST_LIMIT, X_ASSIST_LIMIT);
               
               control_mode = MODE_TRACKING_IMU_W_WITH_HEADING_HOLD;
           }
 
+          // Case 3: Low speed / heading hold impossible / no rotation command
           else{
+              pidW.reset();
               heading_hold_active = false;
               heading_error = 0.0f;
               heading_hold_w_ref = 0.0f;
@@ -459,32 +476,19 @@ void loop(){
 
         // Debug packet
         if(debugFlags.print_debug){
-            Serial.printf("DEBUG,"); 
-            Serial.print(millis()); Serial.print(",");
-            Serial.print((int)control_mode); Serial.print(",");
-            Serial.print(v_ref, 4); Serial.print(",");
-            Serial.print(w_ref, 4); Serial.print(",");
-            Serial.print(v_meas, 4); Serial.print(",");
-            Serial.print(w_meas_encoder, 4); Serial.print(",");
-            Serial.print(w_meas_for_control, 4); Serial.print(",");
-            Serial.print(using_imu_for_w ? 1 : 0); Serial.print(",");
-            Serial.print(imu_ok ? 1 : 0); Serial.print(",");
-            Serial.print(imu_wz_for_control, 4); Serial.print(",");
-            Serial.print(yaw_meas, 4); Serial.print(",");
-            Serial.print(heading_ref, 4); Serial.print(",");
-            Serial.print(heading_error, 4); Serial.print(",");
-            Serial.print(heading_hold_w_ref, 4); Serial.print(",");
-            Serial.print(y_ff, 4); Serial.print(",");
-            Serial.print(x_ff, 4); Serial.print(",");
-            Serial.print(y_corr_v, 4); Serial.print(",");
-            Serial.print(x_corr_v, 4); Serial.print(",");
-            Serial.print(x_assist_v, 4); Serial.print(",");
-            Serial.print(debugTuning.y_neutral_trim, 4); Serial.print(",");
-            Serial.print(debugTuning.x_neutral_trim, 4); Serial.print(",");
-            Serial.print(y_cmd, 4); Serial.print(",");
-            Serial.print(x_cmd, 4); Serial.print(",");
-            Serial.print(encoderReader.getVL(), 4); Serial.print(",");
-            Serial.println(encoderReader.getVR(), 4);
+            Serial.print("v_ref: "); Serial.print(v_ref, 3);
+            Serial.print("  |  v: "); Serial.print(v_meas, 3);
+            
+            Serial.print("  |  w_ref: "); Serial.print(w_ref, 3);
+            Serial.print("  |  w: "); Serial.print(w_meas_for_control, 3);
+
+            Serial.print("  |  imu_wz: "); Serial.print(imu_wz_for_control, 3);
+            Serial.print("  |  using_imu: "); Serial.print(using_imu_for_w ? "yes" : "no");
+
+            Serial.print("  || vL: "); Serial.print(encoderReader.getVL(), 3);
+            Serial.print("  |  vR: "); Serial.print(encoderReader.getVR(), 3);
+
+            Serial.println();
         }
     }
 }
