@@ -6,7 +6,7 @@
 #include "um7_parser.h"
 #include <math.h>
 #include "LookupTable.h"
-#include "DebugConsole.h"
+#include "SensorPublisher.h"
 
 // GPIO PINS
 
@@ -51,7 +51,7 @@ const unsigned long IMU_TIMEOUT_MS = 200;
 
 // Lookup Table Gain
 const float Y_FF_GAIN = 1.0f;
-const float X_FF_GAIN = 0.50f;
+const float X_FF_GAIN = 1.0f;
 
 // If IMU sign is opposite, change one of these to -1.0f
 // If the wheelchair's rotation is reverse, change the sign
@@ -72,6 +72,8 @@ const float IMU_WZ_VALID_LIMIT = 3.5f;
 const float HEADING_ASSIST_BLEND = 0.5f;
 const float X_ASSIST_LIMIT = 0.10f;
 
+const bool ENABLE_DEBUG_PUBLISH = false;
+
 
 // Debug only mode enum
 enum ControlMode: uint8_t {
@@ -87,9 +89,7 @@ enum ControlMode: uint8_t {
 // Objects
 //
 CmdVelReceiver cmdVelReceiver;
-DebugConsole debugConsole;
-DebugFlags debugFlags;
-DebugTuning debugTuning;
+SensorPublisher sensorPublisher;
 
 EncoderReader encoderReader(
     LEFT_ENCODER_A, LEFT_ENCODER_B, 
@@ -214,18 +214,6 @@ void handleSerialInput(){
         if(serial_line.startsWith("<")){
           cmdVelReceiver.processLine(serial_line);
         }
-        else if(serial_line.startsWith("!")){
-          debugConsole.processLine(
-            serial_line,
-            debugFlags,
-            debugTuning,
-            pidY, pidW, pidHeading, pidWAssist,
-            cmdVelReceiver,
-            wheelchair,
-            heading_hold_active,
-            HEADING_HOLD_MAX_W
-          );
-        }
       }
       serial_line = "";
     }
@@ -245,7 +233,7 @@ void setup(){
     delay(500);
 
     cmdVelReceiver.begin();
-    debugConsole.begin();
+    sensorPublisher.begin();
     encoderReader.begin();
     um7_begin();
 
@@ -276,12 +264,10 @@ void setup(){
     last_control_time = millis();
     last_imu_time = millis();
 
-    Serial.println("DEBUG,time_ms,mode,ref_v,ref_w,"
-                    "v_meas,w_meas_enc,w_ctrl,using_imu,"
-                    "imu_ok,imu_wz,yaw,"
-                    "heading_ref,heading_error,heading_hold_w_ref,"
-                    "y_ff,x_ff,y_corr_v,x_corr_v,x_assist_v,"
-                    "trimy,trimx,y_cmd,x_cmd,vL,vR");
+    if(ENABLE_DEBUG_PUBLISH){
+      Serial.println("DEBUG,time_ms,v_ref,v_meas,w_ref,w_meas_for_control,imu_wz_for_control,y_cmd,x_cmd,v_left,v_right");
+    }
+
     Serial.println("SENSORS_READY");
 }
 
@@ -370,8 +356,8 @@ void loop(){
             x_assist_v = 0.0f;
             resetControllerAndHold();
 
-            y_cmd = Y_NEUTRAL + debugTuning.y_neutral_trim;
-            x_cmd = X_NEUTRAL + debugTuning.x_neutral_trim;
+            y_cmd = Y_NEUTRAL;
+            x_cmd = X_NEUTRAL;
         }
 
         else{
@@ -438,8 +424,8 @@ void loop(){
           }
 
           // Final command = feedforward + PID + heading assist + trim
-          y_cmd = y_ff + y_corr_v + debugTuning.y_neutral_trim;
-          x_cmd = x_ff + x_corr_v + x_assist_v + debugTuning.x_neutral_trim;
+          y_cmd = y_ff + y_corr_v;
+          x_cmd = x_ff + x_corr_v + x_assist_v;
         }
         // Output
         wheelchair.writeXYVoltages(y_cmd, x_cmd);
@@ -450,45 +436,21 @@ void loop(){
     if(millis() - last_log_time > LOG_INTERVAL_MS){
         last_log_time = millis();
 
-        if(debugFlags.print_encoder){
-            Serial.print("ENCODER,");
-            Serial.print(encoderReader.getLeftCount());
-            Serial.print(",");
-            Serial.print(encoderReader.getRightCount());
-            Serial.print(",");
-            Serial.println(millis());
+        sensorPublisher.publishEncoder(encoderReader.getLeftCount(), encoderReader.getRightCount(), millis());
+
+        if(imu_ok){
+          sensorPublisher.publishImu(imu_sample);
         }
 
-        // ROS2 IMU Bridge
-        if(debugFlags.print_imu && imu_ok){
-            Serial.print("IMU,");
-            Serial.print(imu_sample.qx, 6); Serial.print(",");
-            Serial.print(imu_sample.qy, 6); Serial.print(",");
-            Serial.print(imu_sample.qz, 6); Serial.print(",");
-            Serial.print(imu_sample.qw, 6); Serial.print(",");
-            Serial.print(imu_sample.wx, 6); Serial.print(",");
-            Serial.print(imu_sample.wy, 6); Serial.print(",");
-            Serial.print(imu_sample.wz, 6); Serial.print(",");
-            Serial.print(imu_sample.ax, 6); Serial.print(",");
-            Serial.print(imu_sample.ay, 6); Serial.print(",");
-            Serial.println(imu_sample.az, 6);
-        }
-
-        // Debug packet
-        if(debugFlags.print_debug){
-            Serial.print("v_ref: "); Serial.print(v_ref, 3);
-            Serial.print("  |  v: "); Serial.print(v_meas, 3);
-            
-            Serial.print("  |  w_ref: "); Serial.print(w_ref, 3);
-            Serial.print("  |  w: "); Serial.print(w_meas_for_control, 3);
-
-            Serial.print("  |  imu_wz: "); Serial.print(imu_wz_for_control, 3);
-            Serial.print("  |  using_imu: "); Serial.print(using_imu_for_w ? "yes" : "no");
-
-            Serial.print("  || vL: "); Serial.print(encoderReader.getVL(), 3);
-            Serial.print("  |  vR: "); Serial.print(encoderReader.getVR(), 3);
-
-            Serial.println();
+        if(ENABLE_DEBUG_PUBLISH){
+          sensorPublisher.publishDebug(
+            millis(),
+            v_ref, v_meas,
+            w_ref, w_meas_for_control,
+            imu_wz_for_control,
+            y_cmd, x_cmd,
+            encoderReader.getVL(), encoderReader.getVR()
+          );
         }
     }
 }

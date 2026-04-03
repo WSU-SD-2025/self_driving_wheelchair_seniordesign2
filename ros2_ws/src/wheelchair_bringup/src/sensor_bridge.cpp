@@ -7,6 +7,10 @@
 #include <termios.h>
 #include <unistd.h>
 #include <iomanip>
+#include <thread>
+#include <chrono>
+#include <cerrno>
+#include <cstring>
 
 SensorBridge::SensorBridge()
     : Node("sensor_bridge"),
@@ -96,19 +100,29 @@ SensorBridge::SensorBridge()
 }
 
 
+void SensorBridge::closeSerial(){
+    if(serial_fd_ >= 0){
+        close(serial_fd_);
+        serial_fd_ = -1;
+    }
+    serial_buffer_.clear();
+}
+
+
 bool SensorBridge::openSerial(){
+    closeSerial();
+
     serial_fd_ = open(port_.c_str(), O_RDWR | O_NOCTTY | O_NONBLOCK);
 
     if(serial_fd_ < 0){
-        RCLCPP_ERROR(this->get_logger(), "Could not open serial port %s", port_.c_str());
+        RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "Could not open serial port %s: %s", port_.c_str(), std::strerror(errno));
         return false;
     }
 
     termios tty{};
     if(tcgetattr(serial_fd_, &tty) != 0){
-        RCLCPP_ERROR(this->get_logger(), "tcgetattr failed");
-        close(serial_fd_);
-        serial_fd_ = -1;
+        RCLCPP_ERROR(this->get_logger(), "tcgetattr failed %s", std::strerror(errno));
+        closeSerial();
         return false;
     }
 
@@ -126,21 +140,33 @@ bool SensorBridge::openSerial(){
     tty.c_cflag |= CS8;
 
     if(tcsetattr(serial_fd_, TCSANOW, &tty) != 0){
-        RCLCPP_ERROR(this->get_logger(), "tcsetattr failed");
-        close(serial_fd_);
-        serial_fd_ = -1;
+        RCLCPP_ERROR(this->get_logger(), "tcsetattr failed: %s", std::strerror(errno));
+        closeSerial();
         return false;
     }
 
+    tcflush(serial_fd_, TCIOFLUSH);
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+    tcflush(serial_fd_, TCIOFLUSH);
+
+    RCLCPP_INFO(this->get_logger(), "Serial opened: %s", port_.c_str());
     return true;
 }
 
 
 bool SensorBridge::readLine(std::string& line){
+    if(serial_fd_ < 0) return false;
+
     char buffer[256];
     ssize_t n = read(serial_fd_, buffer, sizeof(buffer));
 
     if(n > 0)   serial_buffer_.append(buffer, buffer + n);
+
+    else if(n < 0 && errno != EAGAIN && errno != EWOULDBLOCK){
+        RCLCPP_WARN(this->get_logger(), "Serial read error: %s", std::strerror(errno));
+        closeSerial();
+        return false;
+    }
 
     auto pos = serial_buffer_.find('\n');
 
@@ -200,13 +226,29 @@ void SensorBridge::writeCmdPacket(double linear, double angular){
             this->get_logger(),
             *this->get_clock(),
             2000,
-            "Failed to write to serial port"
+            "Failed to write to serial port: %s", std::strerror(errno)
         );
+
+        closeSerial();
+        std::this_thread::sleep_for(std::chrono::milliseconds(300));
+        openSerial();
+        return;
+    }
+
+    if(static_cast<size_t>(n) != packet.size()){
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "Partial serial write: %ld / %zu",
+        static_cast<long>(n), packet.size());
     }
 }
 
 
 void SensorBridge::timerCallback(){
+
+    if(serial_fd_ < 0){
+        openSerial();
+        return;
+    }
+    
     // 1. Read incoming Sensor lines
     std::string line;
 

@@ -33,6 +33,7 @@ class SensorBridge : public rclcpp::Node{
         void cmdVelCallback(const geometry_msgs::msg::Twist::SharedPtr msg);
         void writeCmdPacket(double linear, double angular);
         double clamp(double x, double lo, double hi);
+        void closeSerial();
 
 
         int serial_fd_;
