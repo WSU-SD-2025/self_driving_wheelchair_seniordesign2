@@ -6,8 +6,8 @@
 static HardwareSerial IMU(1); // UART1
 
 // UM7 TX -> ESP32 RX, UM7 RX -> ESP32 TX
-static const int RX_PIN = 38;
-static const int TX_PIN = 39;
+static const int RX_PIN = 2;
+static const int TX_PIN = 1;
 
 // Scale
 static const float QUAT_SCALE = 29789.09091f;

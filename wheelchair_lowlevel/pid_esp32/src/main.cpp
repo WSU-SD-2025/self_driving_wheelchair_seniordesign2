@@ -15,8 +15,8 @@ const int SDA_PIN = 8;
 const int SCL_PIN = 9;
 
 // Encoders
-const int LEFT_ENCODER_A = 1;
-const int LEFT_ENCODER_B = 2;
+const int LEFT_ENCODER_A = 35;
+const int LEFT_ENCODER_B = 36;
 const int RIGHT_ENCODER_A = 47;
 const int RIGHT_ENCODER_B = 48;
 
