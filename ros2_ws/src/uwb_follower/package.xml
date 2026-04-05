@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<package format="3">
+	<name>uwb_follower</name>
+	<version>0.0.0</version>
+	<description>UWB follower node</description>
+
+	<maintainer email="your@email.com">your_name</maintainer>
+	<license>TODO</license>
+
+	<!-- Build tool -->
+	<buildtool_depend>ament_python</buildtool_depend>
+
+	<!-- Dependencies -->
+	<depend>rclpy</depend>
+	<depend>geometry_msgs</depend>
+	<depend>wheelchair_interfaces</depend>
+
+	<exec_depend>rclpy</exec_depend>
+
+</package>
