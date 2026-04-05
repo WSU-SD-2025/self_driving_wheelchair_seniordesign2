@@ -1,0 +1,14 @@
+wheel_odom_node:
+  ros__parameters:
+    left_cpr: 715.0
+    right_cpr: 1200.0
+    wheel_radius: 0.171
+    wheel_separation: 0.575
+
+    encoder_topic: /encoder/raw
+    odom_topic: /wheel/odom
+
+    odom_frame: odom
+    base_frame: base_link
+
+    publish_tf: true

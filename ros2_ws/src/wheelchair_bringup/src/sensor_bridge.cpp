@@ -7,77 +7,71 @@
 #include <termios.h>
 #include <unistd.h>
 #include <iomanip>
-#include <thread>
-#include <chrono>
 #include <cerrno>
 #include <cstring>
 
 SensorBridge::SensorBridge()
     : Node("sensor_bridge"),
       serial_fd_(-1),
-      publish_tf_(false),
-      left_cpr_(715.0),
-      right_cpr_(1200.0),
-      wheel_radius_(0.171),
-      wheel_separation_(0.575),
-      odom_frame_("odom"),
-      base_frame_("base_link"),
+      port_("/dev/ttyACM0"),
+      baud_(115200),
+      serial_ready_logged_(false),
       imu_frame_("imu_link"),
-      odom_initialized_(false),
-      prev_left_count_(0.0),
-      prev_right_count_(0.0),
-      prev_time_ms_(0.0),
-      x_(0.0),
-      y_(0.0),
-      theta_(0.0),
-      latest_linear_(0.0),
-      latest_angular_(0.0),
+      cmd_vel_topic_("/cmd_vel"),
+      encoder_topic_("/encoder/raw"),
+      imu_topic_("/imu/data"),
       max_linear_(1.0),
       max_angular_(1.0),
-      cmd_timeout_(0.5)
+      cmd_timeout_(0.5),
+      read_period_ms_(10),
+      write_period_ms_(20),
+      reconnect_period_ms_(1000),
+      resend_period_sec_(0.10),
+      latest_linear_(0.0),
+      latest_angular_(0.0),
+      last_sent_linear_(9999.0),
+      last_sent_angular_(9999.0),
+      cmd_dirty_(true)
 {
     // Declare parameters
     this->declare_parameter<std::string>("port", "/dev/ttyACM0");
     this->declare_parameter<int>("baud", 115200);
-    this->declare_parameter<bool>("publish_tf", false);
 
-    this->declare_parameter<double>("left_cpr", 715.0);
-    this->declare_parameter<double>("right_cpr", 1200.0);
-    this->declare_parameter<double>("wheel_radius", 0.171);
-    this->declare_parameter<double>("wheel_separation", 0.575);
-
-    this->declare_parameter<std::string>("odom_frame", "odom");
-    this->declare_parameter<std::string>("base_frame", "base_link");
     this->declare_parameter<std::string>("imu_frame", "imu_link");
-
     this->declare_parameter<std::string>("cmd_vel_topic", "/cmd_vel");
+    this->declare_parameter<std::string>("encoder_topic", "/encoder/raw");
+    this->declare_parameter<std::string>("imu_topic", "/imu/data");
+
     this->declare_parameter<double>("max_linear", 1.0);
     this->declare_parameter<double>("max_angular", 1.0);
     this->declare_parameter<double>("cmd_timeout", 0.5);
 
+    this->declare_parameter<int>("read_period_ms", 10);
+    this->declare_parameter<int>("write_period_ms", 20);
+    this->declare_parameter<int>("reconnect_period_ms", 1000);
+    this->declare_parameter<double>("resend_period_sec", 0.10);
+
     // Get parameter
     port_ = this->get_parameter("port").as_string();
     baud_ = this->get_parameter("baud").as_int();
-    publish_tf_ = this->get_parameter("publish_tf").as_bool();
 
-    left_cpr_ = this->get_parameter("left_cpr").as_double();
-    right_cpr_ = this->get_parameter("right_cpr").as_double();
-    wheel_radius_ = this->get_parameter("wheel_radius").as_double();
-    wheel_separation_ = this->get_parameter("wheel_separation").as_double();
-
-    odom_frame_ = this->get_parameter("odom_frame").as_string();
-    base_frame_ = this->get_parameter("base_frame").as_string();
     imu_frame_ = this->get_parameter("imu_frame").as_string();
-
     cmd_vel_topic_ = this->get_parameter("cmd_vel_topic").as_string();
+    encoder_topic_ = this->get_parameter("encoder_topic").as_string();
+    imu_topic_ = this->get_parameter("imu_topic").as_string();
+
     max_linear_ = this->get_parameter("max_linear").as_double();
     max_angular_ = this->get_parameter("max_angular").as_double();
     cmd_timeout_ = this->get_parameter("cmd_timeout").as_double();
 
+    read_period_ms_ = this->get_parameter("read_period_ms").as_int();
+    write_period_ms_ = this->get_parameter("write_period_ms").as_int();
+    reconnect_period_ms_ = this->get_parameter("reconnect_period_ms").as_int();
+    resend_period_sec_ = this->get_parameter("resend_period_sec").as_double();
+
     // Create publishers
-    odom_pub_ = this->create_publisher<nav_msgs::msg::Odometry>("/odom", 20);
-    imu_pub_ = this->create_publisher<sensor_msgs::msg::Imu>("/imu/data", 50);
-    tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
+    encoder_pub_ = this->create_publisher<std_msgs::msg::Int64MultiArray>(encoder_topic_, 50);
+    imu_pub_ = this->create_publisher<sensor_msgs::msg::Imu>(imu_topic_, 50);
 
     // Create Subscriber
     cmd_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
@@ -87,16 +81,38 @@ SensorBridge::SensorBridge()
     );
 
     last_cmd_time_ = this->now();
+    last_send_time_ = this->now();
 
-    if(!openSerial())   throw std::runtime_error("Failed to open serial port");
 
-    timer_ = this->create_wall_timer(
-        std::chrono::milliseconds(10),
-        std::bind(&SensorBridge::timerCallback, this)
+    // Initial serial open attempt
+    if(!openSerial())   RCLCPP_WARN(this->get_logger(), "Initial serial open failed.");
+
+    // Timers
+    read_timer_ = this->create_wall_timer(
+        std::chrono::milliseconds(read_period_ms_),
+        std::bind(&SensorBridge::readTimerCallback, this)
     );
 
-    RCLCPP_INFO(this->get_logger(), "SensorBridge node started on %s", port_.c_str());
+    write_timer_ = this->create_wall_timer(
+        std::chrono::milliseconds(write_period_ms_),
+        std::bind(&SensorBridge::writeTimerCallback, this)
+    );
+
+    reconnect_timer_ = this->create_wall_timer(
+        std::chrono::milliseconds(reconnect_period_ms_),
+        std::bind(&SensorBridge::reconnectTimerCallback, this)
+    );
+
+    RCLCPP_INFO(this->get_logger(), "SensorBridge node started");
+    RCLCPP_INFO(this->get_logger(), "Serial port: %s @ %d baud", port_.c_str(), baud_);
     RCLCPP_INFO(this->get_logger(), "Subscribed to %s", cmd_vel_topic_.c_str());
+    RCLCPP_INFO(this->get_logger(), "Publishing encoder raw to %s", encoder_topic_.c_str());
+    RCLCPP_INFO(this->get_logger(), "Publishing IMU to %s", imu_topic_.c_str());
+}
+
+
+SensorBridge::~SensorBridge(){
+    closeSerial();
 }
 
 
@@ -106,6 +122,25 @@ void SensorBridge::closeSerial(){
         serial_fd_ = -1;
     }
     serial_buffer_.clear();
+    serial_ready_logged_ = false;
+}
+
+
+speed_t SensorBridge::getBaudConstant(int baud) const{
+    switch(baud){
+        case 9600: return B9600;
+        case 19200: return B19200;
+        case 38400: return B38400;
+        case 57600: return B57600;
+        case 115200: return B115200;
+#ifdef B230400
+        case 230400: return B230400;
+#endif
+#ifdef B460800
+        case 460800: return B460800;
+#endif
+        default: return B115200;
+    }
 }
 
 
@@ -128,7 +163,7 @@ bool SensorBridge::openSerial(){
 
     cfmakeraw(&tty);
 
-    speed_t speed = B115200;
+    const speed_t speed = getBaudConstant(baud_);
     cfsetispeed(&tty, speed);
     cfsetospeed(&tty, speed);
 
@@ -146,9 +181,7 @@ bool SensorBridge::openSerial(){
     }
 
     tcflush(serial_fd_, TCIOFLUSH);
-    std::this_thread::sleep_for(std::chrono::seconds(2));
-    tcflush(serial_fd_, TCIOFLUSH);
-
+    
     RCLCPP_INFO(this->get_logger(), "Serial opened: %s", port_.c_str());
     return true;
 }
@@ -205,11 +238,12 @@ void SensorBridge::cmdVelCallback(const geometry_msgs::msg::Twist::SharedPtr msg
     latest_linear_ = msg->linear.x;
     latest_angular_ = msg->angular.z;
     last_cmd_time_ = this->now();
+    cmd_dirty_ = true;
 }
 
 
-void SensorBridge::writeCmdPacket(double linear, double angular){
-    if(serial_fd_ < 0) return;
+bool SensorBridge::writeCmdPacket(double linear, double angular){
+    if(serial_fd_ < 0) return false;
 
     std::ostringstream oss;
     oss << "<"
@@ -226,35 +260,31 @@ void SensorBridge::writeCmdPacket(double linear, double angular){
             this->get_logger(),
             *this->get_clock(),
             2000,
-            "Failed to write to serial port: %s", std::strerror(errno)
-        );
+            "Failed to write to serial port: %s", std::strerror(errno));
 
         closeSerial();
-        std::this_thread::sleep_for(std::chrono::milliseconds(300));
-        openSerial();
-        return;
+        return false;
     }
 
     if(static_cast<size_t>(n) != packet.size()){
         RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "Partial serial write: %ld / %zu",
         static_cast<long>(n), packet.size());
     }
+    
+    return true;
 }
 
 
-void SensorBridge::timerCallback(){
+void SensorBridge::readTimerCallback(){
+    if(serial_fd_ < 0) return;
 
-    if(serial_fd_ < 0){
-        openSerial();
-        return;
-    }
-    
-    // 1. Read incoming Sensor lines
     std::string line;
-
     while(readLine(line)){
         if(line == "SENSORS_READY"){
-            RCLCPP_INFO(this->get_logger(), "ESP32 sensors ready");
+            if(!serial_ready_logged_){
+                RCLCPP_INFO(this->get_logger(), "ESP32 sensors ready");
+                serial_ready_logged_ = true;
+            }
             continue;
         }
 
@@ -265,19 +295,42 @@ void SensorBridge::timerCallback(){
             handleImuLine(line);
         }
     }
+}
 
-    // 2. Write latest cmd_vel to ESP32
-    double elapsed = (this->now() - last_cmd_time_).seconds();
+
+void SensorBridge::writeTimerCallback(){
+    if(serial_fd_ < 0) return;
+
+    const double elapsed_cmd = (this->now() - last_cmd_time_).seconds();
 
     double v_cmd = 0.0;
     double w_cmd = 0.0;
 
-    if(elapsed <= cmd_timeout_){
+    if(elapsed_cmd <= cmd_timeout_){
         v_cmd = clamp(latest_linear_, -max_linear_, max_linear_);
         w_cmd = clamp(latest_angular_, -max_angular_, max_angular_);
     }
 
-    writeCmdPacket(v_cmd, w_cmd);
+    const double elapsed_send = (this->now() - last_send_time_).seconds();
+    const bool value_changed = 
+        (std::fabs(v_cmd - last_sent_linear_) > 1e-6) || (std::fabs(w_cmd - last_sent_angular_) > 1e-6);
+
+    const bool keepalive_due = elapsed_send >= resend_period_sec_;
+
+    if(!cmd_dirty_ && !value_changed && !keepalive_due) return;
+
+    if(writeCmdPacket(v_cmd, w_cmd)){
+        last_sent_linear_ = v_cmd;
+        last_sent_angular_ = w_cmd;
+        last_send_time_ = this->now();
+        cmd_dirty_ = false;
+    }
+}
+
+
+void SensorBridge::reconnectTimerCallback(){
+    if(serial_fd_ >= 0) return;
+    openSerial();
 }
 
 
@@ -285,19 +338,19 @@ void SensorBridge::handleEncoderLine(const std::string& line){
     auto parts = split(line, ',');
 
     if(parts.size() != 4){
-        RCLCPP_WARN(this->get_logger(), "Bad encoder line: %s", line.c_str());
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "Bad encoder line: %s", line.c_str());
         return;
     }
 
     try{
-        double left_count = std::stod(parts[1]);
-        double right_count = std::stod(parts[2]);
-        double time_ms = std::stod(parts[3]);
+        const int64_t left_count = std::stoll(parts[1]);
+        const int64_t right_count = std::stoll(parts[2]);
+        const int64_t time_ms = std::stoll(parts[3]);
 
-        publishOdom(left_count, right_count, time_ms);
+        publishEncoderRaw(left_count, right_count, time_ms);
     }
     catch(...){
-        RCLCPP_WARN(this->get_logger(), "Failed to parse encoder line: %s", line.c_str());
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "Failed to parse encoder line: %s", line.c_str());
     }
 }
 
@@ -306,7 +359,7 @@ void SensorBridge::handleImuLine(const std::string& line){
     auto parts = split(line, ',');
 
     if(parts.size() != 11){
-        RCLCPP_WARN(this->get_logger(), "Bad IMU line: %s", line.c_str());
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "Bad IMU line: %s", line.c_str());
         return;
     }
 
@@ -327,107 +380,20 @@ void SensorBridge::handleImuLine(const std::string& line){
         publishImu(qx, qy, qz, qw, wx, wy, wz, ax, ay, az);
     }
     catch(...){
-        RCLCPP_WARN(this->get_logger(), "Failed to parse IMU line: %s", line.c_str());
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "Failed to parse IMU line: %s", line.c_str());
     }
 }
 
 
-void SensorBridge::publishOdom(double left_count, double right_count, double time_ms){
-    if(!odom_initialized_){
-        prev_left_count_ = left_count;
-        prev_right_count_ = right_count;
-        prev_time_ms_ = time_ms;
-        odom_initialized_ = true;
-        return;
-    }
+void SensorBridge::publishEncoderRaw(const int64_t left_count, const int64_t right_count, const int64_t time_ms){
+    
+    std_msgs::msg::Int64MultiArray msg;
+    msg.data.reserve(3);
+    msg.data.push_back(left_count);
+    msg.data.push_back(right_count);
+    msg.data.push_back(time_ms);
 
-    double dt = (time_ms - prev_time_ms_) / 1000.0;
-
-    if(dt <= 0.0){
-        prev_left_count_ = left_count;
-        prev_right_count_ = right_count;
-        prev_time_ms_ = time_ms;
-        return;
-    }
-
-    double left_delta = left_count - prev_left_count_;
-    double right_delta = right_count - prev_right_count_;
-
-    prev_left_count_ = left_count;
-    prev_right_count_ = right_count;
-    prev_time_ms_ = time_ms;
-
-    double left_dist = (left_delta / left_cpr_) * (2.0 * M_PI * wheel_radius_);
-    double right_dist = (right_delta / right_cpr_) * (2.0 * M_PI * wheel_radius_);
-
-    double ds = (left_dist + right_dist) / 2.0;
-    double dtheta = (right_dist - left_dist) / wheel_separation_;
-
-    x_ += ds * std::cos(theta_ + dtheta / 2.0);
-    y_ += ds * std::sin(theta_ + dtheta / 2.0);
-    theta_ += dtheta;
-    theta_ = std::atan2(std::sin(theta_), std::cos(theta_));
-
-    double vx = ds / dt;
-    double wz = dtheta / dt;
-
-    auto now = this->get_clock()->now();
-
-    nav_msgs::msg::Odometry odom_msg;
-    odom_msg.header.stamp = now;
-    odom_msg.header.frame_id = odom_frame_;
-    odom_msg.child_frame_id = base_frame_;
-
-    odom_msg.pose.pose.position.x = x_;
-    odom_msg.pose.pose.position.y = y_;
-    odom_msg.pose.pose.position.z = 0.0;
-
-    odom_msg.pose.pose.orientation.x = 0.0;
-    odom_msg.pose.pose.orientation.y = 0.0;
-    odom_msg.pose.pose.orientation.z = std::sin(theta_ / 2.0);
-    odom_msg.pose.pose.orientation.w = std::cos(theta_ / 2.0);
-
-    odom_msg.twist.twist.linear.x = vx;
-    odom_msg.twist.twist.linear.y = 0.0;
-    odom_msg.twist.twist.angular.z = wz;
-
-    odom_msg.pose.covariance = {
-        0.05, 0.0, 0.0, 0.0, 0.0, 0.0,
-        0.0, 0.10, 0.0, 0.0, 0.0, 0.0,
-        0.0, 0.0, 99999.0, 0.0, 0.0, 0.0,
-        0.0, 0.0, 0.0, 99999.0, 0.0, 0.0,
-        0.0, 0.0, 0.0, 0.0, 99999.0, 0.0,
-        0.0, 0.0, 0.0, 0.0, 0.0, 0.1
-    };
-
-    odom_msg.twist.covariance = {
-        0.05, 0.0, 0.0, 0.0, 0.0, 0.0,
-        0.0, 99999.0, 0.0, 0.0, 0.0, 0.0,
-        0.0, 0.0, 99999.0, 0.0, 0.0, 0.0,
-        0.0, 0.0, 0.0, 99999.0, 0.0, 0.0,
-        0.0, 0.0, 0.0, 0.0, 99999.0, 0.0,
-        0.0, 0.0, 0.0, 0.0, 0.0, 0.1
-    };
-
-    odom_pub_->publish(odom_msg);
-
-    if(publish_tf_){
-        geometry_msgs::msg::TransformStamped tf_msg;
-        tf_msg.header.stamp = now;
-        tf_msg.header.frame_id = odom_frame_;
-        tf_msg.child_frame_id = base_frame_;
-
-        tf_msg.transform.translation.x = x_;
-        tf_msg.transform.translation.y = y_;
-        tf_msg.transform.translation.z = 0.0;
-
-        tf_msg.transform.rotation.x = 0.0;
-        tf_msg.transform.rotation.y = 0.0;
-        tf_msg.transform.rotation.z = std::sin(theta_ / 2.0);
-        tf_msg.transform.rotation.w = std::cos(theta_ / 2.0);
-
-        tf_broadcaster_->sendTransform(tf_msg);
-    }
+    encoder_pub_->publish(msg);
 }
 
 

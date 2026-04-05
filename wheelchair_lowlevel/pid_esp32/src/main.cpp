@@ -11,8 +11,8 @@
 // GPIO PINS
 
 // Wheelchair I2C (MCP4728)
-const int SDA_PIN = 8;
-const int SCL_PIN = 9;
+const int SDA_PIN = 6;
+const int SCL_PIN = 7;
 
 // Encoders
 const int LEFT_ENCODER_A = 35;
@@ -283,7 +283,7 @@ void loop(){
     }
 
     v_ref = cmdVelReceiver.getVRef();
-    w_ref = cmdVelReceiver.getWRef();
+    w_ref = -cmdVelReceiver.getWRef();
 
     // 3. Update IMU continuously
     um7_update();

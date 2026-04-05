@@ -4,77 +4,84 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <termios.h>
 
 #include <rclcpp/rclcpp.hpp>
-#include <nav_msgs/msg/odometry.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 #include <geometry_msgs/msg/twist.hpp>
-#include <geometry_msgs/msg/transform_stamped.hpp>
-#include <tf2_ros/transform_broadcaster.h>
+#include <std_msgs/msg/int64_multi_array.hpp>
 
 
 class SensorBridge : public rclcpp::Node{
     public:
         SensorBridge();
+        ~SensorBridge();
     
     private:
-        void timerCallback();
+        // Timers
+        void readTimerCallback();
+        void writeTimerCallback();
+        void reconnectTimerCallback();
 
+        // Serial
         bool openSerial();
+        void closeSerial();
         bool readLine(std::string& line);
-        std::vector<std::string> split(const std::string& s, char delimiter);
+        bool writeCmdPacket(double linear, double angular);
+        speed_t getBaudConstant(int baud) const;
 
+        // Parsing
+        std::vector<std::string> split(const std::string& s, char delimiter);
         void handleEncoderLine(const std::string& line);
         void handleImuLine(const std::string& line);
 
-        void publishOdom(double left_count, double right_count, double time_ms);
+        // Publish
+        void publishEncoderRaw(int64_t left_count, int64_t right_count, int64_t time_ms);
         void publishImu(double qx, double qy, double qz, double qw, double wx, double wy, double wz, double ax, double ay, double az);
 
+        // cmd_vel
         void cmdVelCallback(const geometry_msgs::msg::Twist::SharedPtr msg);
-        void writeCmdPacket(double linear, double angular);
         double clamp(double x, double lo, double hi);
-        void closeSerial();
 
-
+        // Serial state
         int serial_fd_;
         std::string serial_buffer_;
-
         std::string port_;
         int baud_;
-        bool publish_tf_;
+        bool serial_ready_logged_;
 
-        double left_cpr_;
-        double right_cpr_;
-        double wheel_radius_;
-        double wheel_separation_;
-
-        std::string odom_frame_;
-        std::string base_frame_;
+        // Topics/ Params
         std::string imu_frame_;
-
-        rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_;
-        rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_pub_;
-        std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
-        rclcpp::TimerBase::SharedPtr timer_;
-
-        bool odom_initialized_;
-        double prev_left_count_;
-        double prev_right_count_;
-        double prev_time_ms_;
-
-        double x_;
-        double y_;
-        double theta_;
-
-
-        // cmd_vel bridge
-        rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_sub_;
         std::string cmd_vel_topic_;
-        double latest_linear_;
-        double latest_angular_;
+        std::string encoder_topic_;
+        std::string imu_topic_;
+
         double max_linear_;
         double max_angular_;
         double cmd_timeout_;
+
+        int read_period_ms_;
+        int write_period_ms_;
+        int reconnect_period_ms_;
+        double resend_period_sec_;
+
+        // cmd state
+        double latest_linear_;
+        double latest_angular_;
+        double last_sent_linear_;
+        double last_sent_angular_;
+        bool cmd_dirty_;
+
         rclcpp::Time last_cmd_time_;
+        rclcpp::Time last_send_time_;
+
+        // ROS2 interfaces
+        rclcpp::Publisher<std_msgs::msg::Int64MultiArray>::SharedPtr encoder_pub_;
+        rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_pub_;
+        rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_sub_;
+
+        rclcpp::TimerBase::SharedPtr read_timer_;
+        rclcpp::TimerBase::SharedPtr write_timer_;
+        rclcpp::TimerBase::SharedPtr reconnect_timer_;
 };
 #endif

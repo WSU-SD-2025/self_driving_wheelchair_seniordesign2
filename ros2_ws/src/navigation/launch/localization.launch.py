@@ -12,12 +12,24 @@ def generate_launch_description():
         [FindPackageShare('wheelchair_bringup'), 'config', 'sensor_bridge.yaml']
     )
 
+    wheel_odom_yaml = PathJoinSubstitution(
+        [FindPackageShare('wheelchair_bringup'), 'config', 'wheel_odom.yaml']
+    )
+
     sensor_bridge_node = Node(
         package='wheelchair_bringup',
         executable='sensor_bridge',
         name='sensor_bridge',
         output='screen',
         parameters=[sensor_bridge_yaml]
+    )
+
+    wheel_odom_node = Node(
+        package='wheelchair_bringup',
+        executable='wheel_odom_node',
+        name='wheel_odom_node',
+        output='screen',
+        parameters=[wheel_odom_yaml]
     )
 
     ekf_node = Node(
@@ -30,5 +42,6 @@ def generate_launch_description():
 
     return LaunchDescription([
         sensor_bridge_node,
+        wheel_odom_node,
         ekf_node
     ])
