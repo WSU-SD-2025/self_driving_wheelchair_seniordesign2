@@ -4,13 +4,13 @@
 #include "CmdVelReceiver.h"
 
 // GPIO PINS
-const int SDA_PIN = 8;
-const int SCL_PIN = 9;
+const int SDA_PIN = 6;
+const int SCL_PIN = 7;
 
-const int LEFT_ENCODER_A = 1;
-const int LEFT_ENCODER_B = 2;
-const int RIGHT_ENCODER_A = 16;
-const int RIGHT_ENCODER_B = 17;
+const int LEFT_ENCODER_A = 35;
+const int LEFT_ENCODER_B = 36;
+const int RIGHT_ENCODER_A = 47;
+const int RIGHT_ENCODER_B = 48;
 
 // Encoder Sign
 const int LEFT_SIGN = 1;
@@ -26,7 +26,7 @@ const float WHEEL_SEPARATION = 0.575f;
 const float Y_NEUTRAL = 2.689f;
 
 // X Neutral: 2.69 -> 2.70 (Trying to find the actual neutral)
-const float X_NEUTRAL = 2.705f;
+const float X_NEUTRAL = 2.735f;
 
 const float Y_MIN_V = 1.0f;
 const float Y_MAX_V = 4.2f;
@@ -100,7 +100,7 @@ void loop(){
 
   // 3. cmd_vel to voltage
   float v_ref = cmdVelReceiver.getVRef();
-  float w_ref = cmdVelReceiver.getWRef();
+  float w_ref = -cmdVelReceiver.getWRef();
 
   float y_cmd = Y_NEUTRAL;
   float x_cmd = X_NEUTRAL;

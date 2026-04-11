@@ -8,227 +8,221 @@
 #include "LookupTable.h"
 #include "SensorPublisher.h"
 
+// =========================
 // GPIO PINS
+// =========================
 
 // Wheelchair I2C (MCP4728)
 const int SDA_PIN = 6;
 const int SCL_PIN = 7;
 
 // Encoders
-const int LEFT_ENCODER_A = 35;
-const int LEFT_ENCODER_B = 36;
+const int LEFT_ENCODER_A  = 35;
+const int LEFT_ENCODER_B  = 36;
 const int RIGHT_ENCODER_A = 47;
 const int RIGHT_ENCODER_B = 48;
 
 // Encoder Sign
-const int LEFT_SIGN = 1;
+const int LEFT_SIGN  = 1;
 const int RIGHT_SIGN = 1;
 
-// Encoder & Wheelchair parameters
-const float LEFT_CPR = 715.0f;
-const float RIGHT_CPR = 1200.0f;
-const float WHEEL_RADIUS = 0.171f;
+// =========================
+// Encoder & wheelchair params
+// =========================
+const float LEFT_CPR         = 715.0f;
+const float RIGHT_CPR        = 1200.0f;
+const float WHEEL_RADIUS     = 0.171f;
 const float WHEEL_SEPARATION = 0.575f;
 
+// =========================
 // Voltage settings
+// =========================
 const float Y_NEUTRAL = 2.689f;
-const float X_NEUTRAL = 2.705f;
+const float X_NEUTRAL = 2.750f;
 
 const float Y_MIN_V = 1.0f;
 const float Y_MAX_V = 4.2f;
 const float X_MIN_V = 1.0f;
 const float X_MAX_V = 4.2f;
 
+// =========================
 // Timing
-const unsigned long CMD_TIMEOUT_MS = 1000;
-const unsigned long ENCODER_INTERVAL_MS = 20; //50Hz
-const unsigned long CONTROL_INTERVAL_MS = 20; //50Hz
-const unsigned long LOG_INTERVAL_MS = 100;
-const unsigned long IMU_TIMEOUT_MS = 200;
+// =========================
+const unsigned long CMD_TIMEOUT_MS      = 1000;
+const unsigned long ENCODER_INTERVAL_MS = 20;   // 50 Hz
+const unsigned long LOG_INTERVAL_MS     = 100;  // 10 Hz
+const unsigned long IMU_TIMEOUT_MS      = 200;
+
+// =========================
+// Linear Mapping Settings
+// =========================Took
+const float MAX_LINEAR_CMD = 1.0f;   // m/s
+const float MAX_ANGULAR_CMD = 1.0f;  // rad/s
+
+const float Y_SPAN_V = 0.90f;
+const float X_SPAN_V = 0.70f;
+
+const float Y_DEADBAND_V = 0.10f;
+const float X_DEADBAND_V = 0.10f;
 
 
-// Control Settings
+// =========================
+// PID Settings
+// =========================
+const float PIDY_KP = 0.01f;
+const float PIDY_KI = 0.08f;
+const float PIDY_KD = 0.0f;
 
-// Lookup Table Gain
-const float Y_FF_GAIN = 1.0f;
-const float X_FF_GAIN = 1.0f;
+const float PIDW_KP = 0.025f;
+const float PIDW_KI = 0.005f;
+const float PIDW_KD = 0.0f;
 
-// If IMU sign is opposite, change one of these to -1.0f
-// If the wheelchair's rotation is reverse, change the sign
-const float IMU_WZ_SIGN = 1.0f;
-// If the heading hold is changing in reverse way with yaw, change the sign
-const float IMU_YAW_SIGN = 1.0f;
+// Output correction limits (V)
+const float Y_PID_MIN = -0.20f;
+const float Y_PID_MAX = 0.20f;
 
-const float TURN_ENABLE_THRESHOLD = 0.03f;
+const float X_PID_MIN = -0.18f;
+const float X_PID_MAX = 0.18f;
+
+// Enable thresholds
 const float SPEED_ENABLE_THRESHOLD = 0.02f;
+const float TURN_ENABLE_THRESHOLD = 0.02f;
 
-// Heading hold settings
-const float HEADING_HOLD_ENABLE_W = 0.02f;
-const float HEADING_HOLD_ENABLED_SPEED = 0.05f;
-const float HEADING_HOLD_MAX_W = 0.20f;
 
-// Safety / sanity
-const float IMU_WZ_VALID_LIMIT = 3.5f;
-const float HEADING_ASSIST_BLEND = 0.5f;
-const float X_ASSIST_LIMIT = 0.10f;
-
+// =========================
+// Sign settings
+// =========================
+const float IMU_WZ_SIGN  = -1.0f;
+//Debug flag
 const bool ENABLE_DEBUG_PUBLISH = false;
 
 
-// Debug only mode enum
-enum ControlMode: uint8_t {
-  MODE_STOP = 0,
-  MODE_TRACKING_ENCODER_W = 1,
-  MODE_TRACKING_IMU_W = 2,
-  MODE_TRACKING_IMU_W_WITH_HEADING_HOLD = 3
-};
 
 
-
-//
+// =========================
 // Objects
-//
+// =========================
 CmdVelReceiver cmdVelReceiver;
 SensorPublisher sensorPublisher;
 
 EncoderReader encoderReader(
-    LEFT_ENCODER_A, LEFT_ENCODER_B, 
-    RIGHT_ENCODER_A, RIGHT_ENCODER_B, 
+    LEFT_ENCODER_A, LEFT_ENCODER_B,
+    RIGHT_ENCODER_A, RIGHT_ENCODER_B,
     LEFT_SIGN, RIGHT_SIGN,
-    LEFT_CPR, RIGHT_CPR, 
-    WHEEL_RADIUS, WHEEL_SEPARATION);
+    LEFT_CPR, RIGHT_CPR,
+    WHEEL_RADIUS, WHEEL_SEPARATION
+);
 
 WheelchairController wheelchair(
-    SDA_PIN, SCL_PIN, 
-    MCP4728_CHANNEL_A, MCP4728_CHANNEL_B, 
-    Y_NEUTRAL, X_NEUTRAL, 
-    Y_MIN_V, Y_MAX_V, 
-    X_MIN_V, X_MAX_V);
+    SDA_PIN, SCL_PIN,
+    MCP4728_CHANNEL_A, MCP4728_CHANNEL_B,
+    Y_NEUTRAL, X_NEUTRAL,
+    Y_MIN_V, Y_MAX_V,
+    X_MIN_V, X_MAX_V
+);
 
-// PID Controllers
-PidController pidY;   // Linear velocity correction
-PidController pidW;   // Angular velocity correction
-PidController pidHeading; // Heading hold outer loop
-PidController pidWAssist; // Heading hold inner assist loop
+PidController pidY;
+PidController pidW;
 
-//ISR wrappers
-void IRAM_ATTR leftISR(){
-  encoderReader.handleLeftISR();
+
+
+// =========================
+// Interrupts
+// =========================
+void IRAM_ATTR leftISR() {
+    encoderReader.handleLeftISR();
 }
 
-void IRAM_ATTR rightISR(){
-  encoderReader.handleRightISR();
+void IRAM_ATTR rightISR() {
+    encoderReader.handleRightISR();
 }
 
-// Encoder snapshots
+// =========================
+// Encoder snapshot state
+// =========================
 EncoderSnapshot prev_snap;
 EncoderSnapshot curr_snap;
 bool has_prev_snap = false;
 
+// =========================
+// Timing state
+// =========================
 unsigned long last_log_time = 0;
-unsigned long last_control_time = 0;
 unsigned long last_imu_time = 0;
 
+// =========================
 // Serial input line buffer
+// =========================
 String serial_line = "";
 
+// =========================
 // IMU state
+// =========================
 ImuSample imu_sample;
 bool imu_ok = false;
-float yaw_meas = 0.0f; 
 
-// Heading hold state
-float heading_ref = 0.0f;
-bool heading_hold_active = false;
-float heading_error = 0.0f;
-float heading_hold_w_ref = 0.0f;
 
+// =========================
 // Reference states
+// =========================
 float v_ref = 0.0f;
 float w_ref = 0.0f;
 
+
+// =========================
 // Measured states
+// =========================
 float v_meas = 0.0f;
 float w_meas_encoder = 0.0f;
-float imu_wz_for_control = 0.0f;
-float w_meas_for_control = 0.0f;
-bool using_imu_for_w = false;
+float w_meas_pid = 0.0f;
 
-// Feedforward voltages from LUT
+
+// =========================
+// Final output voltages
+// =========================
 float y_ff = Y_NEUTRAL;
 float x_ff = X_NEUTRAL;
 
-// PID correction voltages
-float y_corr_v = 0.0f;
-float x_corr_v = 0.0f;
-float x_assist_v = 0.0f;
+float y_corr = 0.0f;
+float x_corr = 0.0f;
 
-// Final output voltages
 float y_cmd = Y_NEUTRAL;
 float x_cmd = X_NEUTRAL;
 
-// Debug-only
-ControlMode control_mode = MODE_STOP;
-
-
-// Quaternion to Yaw
-float quaternionToYaw(const ImuSample& imu){
-    float siny_cosp = 2.0f * (imu.qw * imu.qz + imu.qx * imu.qy);
-    float cosy_cosp = 1.0f - 2.0f * (imu.qy * imu.qy + imu.qz * imu.qz);
-    return atan2f(siny_cosp, cosy_cosp);
-}
-
-float wrapAngle(float a){
-  while(a > PI) a-= 2.0f * PI;
-  while(a < -PI) a+= 2.0f * PI;
-  return a;
-}
-
-float clampf_local(float v, float lo, float hi){
-  if(v < lo) return lo;
-  if(v > hi) return hi;
-  return v;
-}
-
-void resetControllerAndHold(){
-  pidY.reset();
-  pidW.reset();
-  pidHeading.reset();
-  pidWAssist.reset();
-
-  heading_hold_active = false;
-  heading_error = 0.0f;
-  heading_hold_w_ref = 0.0f;
-  x_assist_v = 0.0f;
+void resetControllers(){
+    pidY.reset();
+    pidW.reset();
+    y_corr = 0.0f;
+    x_corr = 0.0f;
 }
 
 
-void handleSerialInput(){
-  while(Serial.available() > 0){
-    char c = (char)Serial.read();
 
-    if(c == '\r')   continue;
+void handleSerialInput() {
+    while (Serial.available() > 0) {
+        char c = (char)Serial.read();
 
-    if(c == '\n'){
-      if(serial_line.length() > 0){
-        if(serial_line.startsWith("<")){
-          cmdVelReceiver.processLine(serial_line);
+        if (c == '\r') continue;
+
+        if (c == '\n') {
+            if (serial_line.length() > 0) {
+                if (serial_line.startsWith("<")) {
+                    cmdVelReceiver.processLine(serial_line);
+                }
+            }
+            serial_line = "";
+        } else {
+            serial_line += c;
+            if (serial_line.length() > 120) {
+                serial_line = "";
+            }
         }
-      }
-      serial_line = "";
     }
-    else{
-      serial_line += c;
-      if(serial_line.length() > 120){
-        serial_line = "";
-      }
-    }
-  }
 }
 
 
 
-void setup(){
+void setup() {
     Serial.begin(115200);
     delay(500);
 
@@ -240,217 +234,123 @@ void setup(){
     attachInterrupt(digitalPinToInterrupt(LEFT_ENCODER_A), leftISR, CHANGE);
     attachInterrupt(digitalPinToInterrupt(RIGHT_ENCODER_A), rightISR, CHANGE);
 
-    if(!wheelchair.begin()){
-      Serial.println("MCP4728 not found");
-      while(1){
-        delay(10);
-      }
+    // Initialize DAC
+    if (!wheelchair.begin()) {
+        Serial.println("MCP4728 not found");
+        while (1) delay(10);
     }
 
+    // Configure linear mapping parameters
+    wheelchair.setCommands(MAX_LINEAR_CMD, MAX_ANGULAR_CMD);
+    wheelchair.setVoltageSpans(Y_SPAN_V, X_SPAN_V);
+    wheelchair.setDeadbands(Y_DEADBAND_V, X_DEADBAND_V);
+    // Set neutral output at startup
     wheelchair.setNeutral();
 
-    // PID outputs are voltage corrections, not normalized values
-    // Conservative starting gains
-
-    // Begin(Kp, Ki, Kd, out_min, out_max)
-    // PidY: Linear velocity correction, max correction of +/- 0.25V
-    // PidW: Angular velocity correction, max correction of +/- 0.20V
-    pidY.begin(0.35f, 0.08f, 0.0f, -0.20f, 0.20f);
-    pidW.begin(0.18f, 0.02f, 0.0f, -0.18f, 0.18f);
-    pidHeading.begin(1.20f, 0.00f, 0.00f, -HEADING_HOLD_MAX_W, HEADING_HOLD_MAX_W);
-    pidWAssist.begin(0.10f, 0.00f, 0.00f, -X_ASSIST_LIMIT, X_ASSIST_LIMIT);
+    pidY.begin(PIDY_KP, PIDY_KI, PIDY_KD, Y_PID_MIN, Y_PID_MAX);
+    pidW.begin(PIDW_KP, PIDW_KI, PIDW_KD, X_PID_MIN, X_PID_MAX);
 
     last_log_time = millis();
-    last_control_time = millis();
     last_imu_time = millis();
-
-    if(ENABLE_DEBUG_PUBLISH){
-      Serial.println("DEBUG,time_ms,v_ref,v_meas,w_ref,w_meas_for_control,imu_wz_for_control,y_cmd,x_cmd,v_left,v_right");
-    }
 
     Serial.println("SENSORS_READY");
 }
 
+// ===================== MAIN LOOP =====================
 
-void loop(){
-    // 1. Read Serial input line by line
+void loop() {
+
+    // 1. Read incoming cmd_vel packets from serial
     handleSerialInput();
 
-    // 2. timeout safety
-    if(millis() - cmdVelReceiver.getLastCmdMs() > CMD_TIMEOUT_MS){
-      cmdVelReceiver.setZero();
-      resetControllerAndHold();
+    // 2. Safety timeout: stop if no command received
+    if (millis() - cmdVelReceiver.getLastCmdMs() > CMD_TIMEOUT_MS) {
+        cmdVelReceiver.setZero();
+        resetControllers();
     }
 
+    // 3. Read command references
     v_ref = cmdVelReceiver.getVRef();
+
+    // IMPORTANT:
+    // ROS2: +angular.z = left turn (CCW)
+    // Wheelchair X voltage: + = right turn
+    // → invert sign here to match behavior
     w_ref = -cmdVelReceiver.getWRef();
 
-    // 3. Update IMU continuously
+    // 4. Update IMU (for publishing only)
     um7_update();
-    if(um7_get_sample(imu_sample)){
-      imu_ok = imu_sample.valid;
-      if(imu_ok){
-        yaw_meas = IMU_YAW_SIGN * quaternionToYaw(imu_sample);
-        last_imu_time = millis();
-      }
+    if (um7_get_sample(imu_sample)) {
+        imu_ok = imu_sample.valid;
+        if (imu_ok) {
+            // Apply sign correction to match ROS2 convention
+            imu_sample.wz = IMU_WZ_SIGN * imu_sample.wz;
+            last_imu_time = millis();
+        }
     }
 
-    // IMU timeout
-    if(millis() - last_imu_time > IMU_TIMEOUT_MS){
-      imu_ok = false;
-    } 
-
-    // 4. Encoder update
-    if(encoderReader.readSnapshot(curr_snap, ENCODER_INTERVAL_MS)){
-      if(has_prev_snap){
-        encoderReader.updateVelocitiesFromSnapshot(prev_snap, curr_snap);
-      }
-      prev_snap = curr_snap;
-      has_prev_snap = true;
+    // IMU timeout handling
+    if (millis() - last_imu_time > IMU_TIMEOUT_MS) {
+        imu_ok = false;
     }
 
-    // 5. Measured states
-    v_meas = encoderReader.getVBody();
-    w_meas_encoder = encoderReader.getWBody();
+    // 5. Update encoder-based velocity and run control
+    if (encoderReader.readSnapshot(curr_snap, ENCODER_INTERVAL_MS)) {
+        if (has_prev_snap) {
+            encoderReader.updateVelocitiesFromSnapshot(prev_snap, curr_snap);
 
-    imu_wz_for_control = IMU_WZ_SIGN * imu_sample.wz;
-    bool imu_wz_reasonable = fabsf(imu_wz_for_control) < IMU_WZ_VALID_LIMIT;
-    using_imu_for_w = (imu_ok && imu_wz_reasonable);
+            float dt = (curr_snap.time_ms - prev_snap.time_ms) / 1000.0f;
+            v_meas = encoderReader.getVBody();
+            w_meas_encoder = encoderReader.getWBody();
+            w_meas_pid = -w_meas_encoder;
 
-    if(using_imu_for_w){
-        w_meas_for_control = imu_wz_for_control;
-    }
-    else{
-        w_meas_for_control = w_meas_encoder;
+            // Feedforward frrom linear mapping
+            wheelchair.commandToVoltage(v_ref, w_ref, y_ff, x_ff);
+
+            // Y-axis PID (linear velocity)
+            if(fabsf(v_ref) > SPEED_ENABLE_THRESHOLD)
+                y_corr = pidY.update(v_ref, v_meas, dt);
+            else{
+                y_corr = 0.0f;
+                pidY.reset();
+            }
+            // X-axis PID (angular velocity)
+            if(fabsf(w_ref) > TURN_ENABLE_THRESHOLD)
+                x_corr = pidW.update(w_ref, w_meas_pid, dt);
+            else{
+                x_corr = 0.0f;
+                pidW.reset();
+            }
+
+            //Final command = feedforward + correction
+            y_cmd = y_ff + y_corr;
+            x_cmd = x_ff + x_corr;
+
+            wheelchair.writeXYVoltages(y_cmd, x_cmd);
+        }
+        else{
+            //First snapshot: just apply feedforward only
+            wheelchair.commandToVoltage(v_ref, w_ref, y_cmd, x_cmd);
+            wheelchair.writeXYVoltages(y_cmd, x_cmd);
+        }
+
+        prev_snap = curr_snap;
+        has_prev_snap = true;
     }
     
 
-    // 6. Control loop: LUT + PID correction
-    unsigned long now = millis();
-    if(now - last_control_time >= CONTROL_INTERVAL_MS){
-        float dt = (now - last_control_time) / 1000.0f;
-        last_control_time = now;
-
-        bool stop_mode = 
-            (fabsf(v_ref) <= SPEED_ENABLE_THRESHOLD) && 
-            (fabsf(w_ref) < TURN_ENABLE_THRESHOLD);
-
-        bool nearly_straight = 
-            (fabsf(w_ref) < HEADING_HOLD_ENABLE_W) && 
-            (fabsf(v_ref) >= HEADING_HOLD_ENABLED_SPEED);
-
-        bool heading_hold_allowed = using_imu_for_w && nearly_straight;
-        bool turn_command_active = fabsf(w_ref) >= HEADING_HOLD_ENABLE_W;
-
-        // Feedforward from LookUp Table
-        float y_ff_raw = lookupYVoltage(v_ref);
-        float x_ff_raw = lookupXVoltage(w_ref);
-
-        y_ff = Y_NEUTRAL + Y_FF_GAIN * (y_ff_raw - Y_NEUTRAL);
-        x_ff = X_NEUTRAL + X_FF_GAIN * (x_ff_raw - X_NEUTRAL);
-
-        if(stop_mode){
-            control_mode = MODE_STOP;
-            y_corr_v = 0.0f;
-            x_corr_v = 0.0f;
-            x_assist_v = 0.0f;
-            resetControllerAndHold();
-
-            y_cmd = Y_NEUTRAL;
-            x_cmd = X_NEUTRAL;
-        }
-
-        else{
-          // Linear-speed tracking
-          if(fabsf(v_ref) > SPEED_ENABLE_THRESHOLD)
-              y_corr_v = pidY.update(v_ref, v_meas, dt);
-          else{
-              y_corr_v = 0.0f;
-              pidY.reset();
-          }
-
-          x_corr_v = 0.0f;
-          x_assist_v = 0.0f;
-
-          // Case 1: Turning or Curved driving -> Use pidW, turn off heading hold
-          if(turn_command_active){
-              x_corr_v = -pidW.update(w_ref, w_meas_for_control, dt);
-              heading_hold_active = false;
-              heading_error = 0.0f;
-              heading_hold_w_ref = 0.0f;
-              pidHeading.reset();
-              pidWAssist.reset();
-
-              if(using_imu_for_w)   control_mode = MODE_TRACKING_IMU_W;
-              else                  control_mode = MODE_TRACKING_ENCODER_W;
-          }
-
-          // Case 2: Driving straight -> Turn off pidW, use heading hold only
-          else if(heading_hold_allowed){
-              pidW.reset();
-
-              if(!heading_hold_active){
-                  heading_ref = yaw_meas;
-                  heading_hold_active = true;
-                  pidHeading.reset();
-                  pidWAssist.reset();
-              }
-
-              heading_error = wrapAngle(heading_ref - yaw_meas);
-
-              // Outer loop: heading error -> desired yaw rate assist
-              heading_hold_w_ref = pidHeading.update(0.0f, -heading_error, dt);
-
-              // Inner loop assist: desired yaw rate -> x voltage assist
-              float assist_cmd = heading_hold_w_ref * HEADING_ASSIST_BLEND;
-              x_assist_v = -pidWAssist.update(assist_cmd, w_meas_for_control, dt);
-              x_assist_v = clampf_local(x_assist_v, -X_ASSIST_LIMIT, X_ASSIST_LIMIT);
-              
-              control_mode = MODE_TRACKING_IMU_W_WITH_HEADING_HOLD;
-          }
-
-          // Case 3: Low speed / heading hold impossible / no rotation command
-          else{
-              pidW.reset();
-              heading_hold_active = false;
-              heading_error = 0.0f;
-              heading_hold_w_ref = 0.0f;
-              x_assist_v = 0.0f;
-              pidHeading.reset();
-              pidWAssist.reset();
-
-              if(using_imu_for_w)   control_mode = MODE_TRACKING_IMU_W;
-              else                  control_mode = MODE_TRACKING_ENCODER_W;
-          }
-
-          // Final command = feedforward + PID + heading assist + trim
-          y_cmd = y_ff + y_corr_v;
-          x_cmd = x_ff + x_corr_v + x_assist_v;
-        }
-        // Output
-        wheelchair.writeXYVoltages(y_cmd, x_cmd);
-    }
-
-
-    // 7. logging / Bridge output
-    if(millis() - last_log_time > LOG_INTERVAL_MS){
+    // 6. Publish encoder and IMU data
+    if (millis() - last_log_time > LOG_INTERVAL_MS) {
         last_log_time = millis();
 
-        sensorPublisher.publishEncoder(encoderReader.getLeftCount(), encoderReader.getRightCount(), millis());
+        sensorPublisher.publishEncoder(
+            encoderReader.getLeftCount(),
+            encoderReader.getRightCount(),
+            millis()
+        );
 
-        if(imu_ok){
-          sensorPublisher.publishImu(imu_sample);
-        }
-
-        if(ENABLE_DEBUG_PUBLISH){
-          sensorPublisher.publishDebug(
-            millis(),
-            v_ref, v_meas,
-            w_ref, w_meas_for_control,
-            imu_wz_for_control,
-            y_cmd, x_cmd,
-            encoderReader.getVL(), encoderReader.getVR()
-          );
+        if (imu_ok) {
+            sensorPublisher.publishImu(imu_sample);
         }
     }
 }

@@ -97,7 +97,7 @@ void WheelOdomNode::encoderCallback(const std_msgs::msg::Int64MultiArray::Shared
     const double right_dist = (static_cast<double>(right_delta) / right_cpr_) * (2.0 * M_PI * wheel_radius_);
 
     const double ds = (left_dist + right_dist) / 2.0;
-    const double dtheta = (right_dist - left_dist) / wheel_separation_;
+    const double dtheta = (left_dist - right_dist) / wheel_separation_;
 
     x_ += ds * std::cos(theta_ + dtheta / 2.0);
     y_ += ds * std::sin(theta_ + dtheta / 2.0);

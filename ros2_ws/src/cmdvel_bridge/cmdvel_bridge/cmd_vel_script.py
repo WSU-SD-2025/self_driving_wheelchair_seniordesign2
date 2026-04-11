@@ -15,7 +15,7 @@ class StepCmdPublisher(Node):
 
         # Mode
         # Linear, Angular, Combined
-        self.mode = 'angular'
+        self.mode = 'linear'
 
         self.max_linear = 1.0
         self.max_angular = 1.0

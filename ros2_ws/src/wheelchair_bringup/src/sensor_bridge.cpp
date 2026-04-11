@@ -409,7 +409,7 @@ void SensorBridge::publishImu(double qx, double qy, double qz, double qw, double
 
     imu_msg.angular_velocity.x = wx;
     imu_msg.angular_velocity.y = wy;
-    imu_msg.angular_velocity.z = wz;
+    imu_msg.angular_velocity.z = - wz;
 
     imu_msg.linear_acceleration.x = ax;
     imu_msg.linear_acceleration.y = ay;
