@@ -19,6 +19,12 @@ def generate_launch_description():
         'ldlidar.yaml'
     )
 
+    twist_mux_yaml = os.path.join(
+        get_package_share_directory('wheelchair_bringup'),
+        'config',
+        'twist_mux.yaml'
+    )
+
     # LD LiDAR container
     ldlidar_container = ComposableNodeContainer(
         name='ldlidar_container',
@@ -49,6 +55,10 @@ def generate_launch_description():
         name='controller_server',
         output='screen',
         parameters=[nav2_yaml],
+        remappings=[
+            ('cmd_vel', '/cmd_vel/nav'),
+            ('/cmd_vel', '/cmd_vel/nav'),
+        ],
     )
 
     planner_server = Node(
@@ -91,12 +101,30 @@ def generate_launch_description():
         parameters=[nav2_yaml],
     )
 
+    twist_mux = Node(
+        package='twist_mux',
+        executable='twist_mux',
+        name='twist_mux',
+        output='screen',
+        parameters=[twist_mux_yaml],
+        remappings=[
+            ('cmd_vel_out', '/cmd_vel/raw'),
+            ('/cmd_vel_out', '/cmd_vel/raw'),
+        ],
+    )
+
     velocity_smoother = Node(
         package='nav2_velocity_smoother',
         executable='velocity_smoother',
         name='velocity_smoother',
         output='screen',
         parameters=[nav2_yaml],
+        remappings=[
+            ('cmd_vel', '/cmd_vel/raw'),
+            ('/cmd_vel', '/cmd_vel/raw'),
+            ('cmd_vel_smoothed', '/cmd_vel/smooth'),
+            ('/cmd_vel_smoothed', '/cmd_vel/smooth'),
+        ],
     )
 
     collision_monitor = Node(
@@ -125,6 +153,7 @@ def generate_launch_description():
         behavior_server,
         bt_navigator,
         waypoint_follower,
+        twist_mux,
         velocity_smoother,
         collision_monitor,
         lifecycle_manager_navigation,

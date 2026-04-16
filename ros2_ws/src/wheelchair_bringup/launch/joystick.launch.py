@@ -17,6 +17,10 @@ def generate_launch_description():
             output='screen',
             parameters=[
                 '/home/sejunmoon/self_driving_wheelchair/ros2_ws/src/wheelchair_bringup/config/xbox_teleop.yaml'
+            ],
+            remappings=[
+            	('/cmd_vel', '/cmd_vel'),
+            	('cmd_vel', '/cmd_vel')
             ]
         ),
     ])

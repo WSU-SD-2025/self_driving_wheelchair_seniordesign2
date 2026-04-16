@@ -2,6 +2,8 @@
 
 #include <cmath>
 #include <stdexcept>
+#include <algorithm>
+#include <cstdlib>
 
 WheelOdomNode::WheelOdomNode()
     : Node("wheel_odom_node"),
@@ -22,7 +24,6 @@ WheelOdomNode::WheelOdomNode()
       y_(0.0),
       theta_(0.0)
 {
-    // Declare parameters
     this->declare_parameter<double>("left_cpr", 715.0);
     this->declare_parameter<double>("right_cpr", 1200.0);
     this->declare_parameter<double>("wheel_radius", 0.171);
@@ -34,7 +35,6 @@ WheelOdomNode::WheelOdomNode()
     this->declare_parameter<std::string>("odom_topic", "/wheel/odom");
     this->declare_parameter<bool>("publish_tf", true);
 
-    // Get parameters
     left_cpr_ = this->get_parameter("left_cpr").as_double();
     right_cpr_ = this->get_parameter("right_cpr").as_double();
     wheel_radius_ = this->get_parameter("wheel_radius").as_double();
@@ -56,13 +56,17 @@ WheelOdomNode::WheelOdomNode()
     RCLCPP_INFO(this->get_logger(), "WheelOdomNode started");
 }
 
-double WheelOdomNode::wrapAngle(double a){
+double WheelOdomNode::wrapAngle(double a)
+{
     return std::atan2(std::sin(a), std::cos(a));
 }
 
-void WheelOdomNode::encoderCallback(const std_msgs::msg::Int64MultiArray::SharedPtr msg){
-    if(msg->data.size() < 3){
-        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "Encoder raw message size < 3");
+void WheelOdomNode::encoderCallback(const std_msgs::msg::Int64MultiArray::SharedPtr msg)
+{
+    if (msg->data.size() < 3) {
+        RCLCPP_WARN_THROTTLE(
+            this->get_logger(), *this->get_clock(), 2000,
+            "Encoder raw message size < 3");
         return;
     }
 
@@ -70,7 +74,7 @@ void WheelOdomNode::encoderCallback(const std_msgs::msg::Int64MultiArray::Shared
     const int64_t right_count = msg->data[1];
     const int64_t time_ms = msg->data[2];
 
-    if(!initialized_){
+    if (!initialized_) {
         prev_left_count_ = left_count;
         prev_right_count_ = right_count;
         prev_time_ms_ = time_ms;
@@ -79,10 +83,7 @@ void WheelOdomNode::encoderCallback(const std_msgs::msg::Int64MultiArray::Shared
     }
 
     const double dt = static_cast<double>(time_ms - prev_time_ms_) / 1000.0;
-    if(dt <= 0.0){
-        prev_left_count_ = left_count;
-        prev_right_count_ = right_count;
-        prev_time_ms_ = time_ms;
+    if (dt <= 1e-4) {
         return;
     }
 
@@ -93,18 +94,37 @@ void WheelOdomNode::encoderCallback(const std_msgs::msg::Int64MultiArray::Shared
     prev_right_count_ = right_count;
     prev_time_ms_ = time_ms;
 
-    const double left_dist = (static_cast<double>(left_delta) / left_cpr_) * (2.0 * M_PI * wheel_radius_);
-    const double right_dist = (static_cast<double>(right_delta) / right_cpr_) * (2.0 * M_PI * wheel_radius_);
+    const int64_t left_delta_used = (std::llabs(left_delta) <= 1) ? 0 : left_delta;
+    const int64_t right_delta_used = (std::llabs(right_delta) <= 1) ? 0 : right_delta;
 
-    const double ds = (left_dist + right_dist) / 2.0;
-    const double dtheta = (left_dist - right_dist) / wheel_separation_;
+    const double left_dist =
+        (static_cast<double>(left_delta_used) / left_cpr_) * (2.0 * M_PI * wheel_radius_);
+    const double right_dist =
+        (static_cast<double>(right_delta_used) / right_cpr_) * (2.0 * M_PI * wheel_radius_);
+
+    double ds = (left_dist + right_dist) / 2.0;
+    double dtheta = (right_dist - left_dist) / wheel_separation_;
+
+    if (std::fabs(ds) < 1e-4) {
+        ds = 0.0;
+    }
+    if (std::fabs(dtheta) < 1e-4) {
+        dtheta = 0.0;
+    }
 
     x_ += ds * std::cos(theta_ + dtheta / 2.0);
     y_ += ds * std::sin(theta_ + dtheta / 2.0);
     theta_ = wrapAngle(theta_ + dtheta);
 
-    const double vx = ds / dt;
-    const double wz = dtheta / dt;
+    double vx = ds / dt;
+    double wz = dtheta / dt;
+
+    if (std::fabs(vx) > 2.0) {
+        vx = 0.0;
+    }
+    if (std::fabs(wz) > 2.5) {
+        wz = 0.0;
+    }
 
     const auto now = this->now();
 
@@ -146,7 +166,7 @@ void WheelOdomNode::encoderCallback(const std_msgs::msg::Int64MultiArray::Shared
 
     odom_pub_->publish(odom_msg);
 
-    if(publish_tf_){
+    if (publish_tf_) {
         geometry_msgs::msg::TransformStamped tf_msg;
         tf_msg.header.stamp = now;
         tf_msg.header.frame_id = odom_frame_;
@@ -165,7 +185,8 @@ void WheelOdomNode::encoderCallback(const std_msgs::msg::Int64MultiArray::Shared
     }
 }
 
-int main(int argc, char **argv){
+int main(int argc, char **argv)
+{
     rclcpp::init(argc, argv);
     rclcpp::spin(std::make_shared<WheelOdomNode>());
     rclcpp::shutdown();

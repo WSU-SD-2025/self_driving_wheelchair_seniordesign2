@@ -24,7 +24,7 @@ const int RIGHT_ENCODER_B = 48;
 
 // Encoder Sign
 const int LEFT_SIGN  = 1;
-const int RIGHT_SIGN = 1;
+const int RIGHT_SIGN = -1;
 
 // =========================
 // Encoder & wheelchair params
@@ -55,49 +55,58 @@ const unsigned long IMU_TIMEOUT_MS      = 200;
 
 // =========================
 // Linear Mapping Settings
-// =========================Took
-const float MAX_LINEAR_CMD = 1.0f;   // m/s
-const float MAX_ANGULAR_CMD = 1.0f;  // rad/s
+// =========================
+const float MAX_LINEAR_CMD  = 1.0f;   // m/s
+const float MAX_ANGULAR_CMD = 1.0f;   // rad/s
 
 const float Y_SPAN_V = 0.90f;
 const float X_SPAN_V = 0.70f;
 
-const float Y_DEADBAND_V = 0.10f;
-const float X_DEADBAND_V = 0.10f;
+const float Y_DEADBAND_V = 0.05f;
+const float X_DEADBAND_V = 0.05f;
 
+// =========================
+// X trim settings
+// =========================
+const float X_BASE_TRIM        = 0.002f;
+const float X_TRIM_START_SPEED = 0.20f;   // m/s
+const float X_TRIM_GAIN        = 0.0215f;
+const float X_TRIM_MAX         = 0.0086f;
 
 // =========================
 // PID Settings
 // =========================
-const float PIDY_KP = 0.01f;
-const float PIDY_KI = 0.08f;
+const float PIDY_KP = 0.02f;
+const float PIDY_KI = 0.001f;
 const float PIDY_KD = 0.0f;
 
-const float PIDW_KP = 0.025f;
-const float PIDW_KI = 0.005f;
+// Turn-rate PID
+const float PIDW_KP = 0.038f;
+const float PIDW_KI = 0.001f;
 const float PIDW_KD = 0.0f;
+
+// Heading-hold PID
+const float PIDH_KP = 1.20f;
+const float PIDH_KI = 0.0f;
+const float PIDH_KD = 0.0f;
 
 // Output correction limits (V)
 const float Y_PID_MIN = -0.20f;
-const float Y_PID_MAX = 0.20f;
+const float Y_PID_MAX =  0.20f;
 
 const float X_PID_MIN = -0.18f;
-const float X_PID_MAX = 0.18f;
+const float X_PID_MAX =  0.18f;
+
+// Heading-hold outer loop output limits (rad/s)
+const float HEADING_W_REF_MIN = -0.20f;
+const float HEADING_W_REF_MAX =  0.20f;
 
 // Enable thresholds
 const float SPEED_ENABLE_THRESHOLD = 0.02f;
-const float TURN_ENABLE_THRESHOLD = 0.02f;
+const float TURN_ENABLE_THRESHOLD  = 0.02f;
 
-
-// =========================
-// Sign settings
-// =========================
-const float IMU_WZ_SIGN  = -1.0f;
-//Debug flag
+// Debug flag
 const bool ENABLE_DEBUG_PUBLISH = false;
-
-
-
 
 // =========================
 // Objects
@@ -123,8 +132,7 @@ WheelchairController wheelchair(
 
 PidController pidY;
 PidController pidW;
-
-
+PidController pidHeading;
 
 // =========================
 // Interrupts
@@ -161,6 +169,14 @@ String serial_line = "";
 ImuSample imu_sample;
 bool imu_ok = false;
 
+// =========================
+// Heading hold state
+// =========================
+float current_yaw = 0.0f;
+float heading_target = 0.0f;
+float heading_hold_w_ref = 0.0f;
+bool heading_initialized = false;
+bool heading_mode_active = false;
 
 // =========================
 // Reference states
@@ -168,14 +184,13 @@ bool imu_ok = false;
 float v_ref = 0.0f;
 float w_ref = 0.0f;
 
-
 // =========================
 // Measured states
 // =========================
 float v_meas = 0.0f;
 float w_meas_encoder = 0.0f;
 float w_meas_pid = 0.0f;
-
+float imu_wz_ctrl = 0.0f;
 
 // =========================
 // Final output voltages
@@ -189,14 +204,59 @@ float x_corr = 0.0f;
 float y_cmd = Y_NEUTRAL;
 float x_cmd = X_NEUTRAL;
 
-void resetControllers(){
+void resetControllers() {
     pidY.reset();
     pidW.reset();
+    pidHeading.reset();
     y_corr = 0.0f;
     x_corr = 0.0f;
+    heading_hold_w_ref = 0.0f;
 }
 
+float clampf_local(float val, float min_v, float max_v) {
+    if (val < min_v) return min_v;
+    if (val > max_v) return max_v;
+    return val;
+}
 
+float wrapAngle(float a) {
+    while (a > PI)  a -= 2.0f * PI;
+    while (a < -PI) a += 2.0f * PI;
+    return a;
+}
+
+float quaternionToYaw(const ImuSample& s) {
+    const float siny_cosp = 2.0f * (s.qw * s.qz + s.qx * s.qy);
+    const float cosy_cosp = 1.0f - 2.0f * (s.qy * s.qy + s.qz * s.qz);
+    return atan2f(siny_cosp, cosy_cosp);
+}
+
+float computeXSpeedTrim(float v_cmd) {
+    float trim = 0.0f;
+
+    if (v_cmd > X_TRIM_START_SPEED) {
+        trim = X_TRIM_GAIN * (v_cmd - X_TRIM_START_SPEED);
+    } else if (v_cmd < -X_TRIM_START_SPEED) {
+        trim = X_TRIM_GAIN * (v_cmd + X_TRIM_START_SPEED);
+    }
+
+    return clampf_local(trim, -X_TRIM_MAX, X_TRIM_MAX);
+}
+
+float computeXTotalTrim(float v_cmd, float w_cmd) {
+    const bool straight_motion = 
+        (fabsf(v_cmd) > SPEED_ENABLE_THRESHOLD) &&
+        (fabsf(w_cmd) <= TURN_ENABLE_THRESHOLD);
+
+        if(!straight_motion)    return 0.0f;
+        float trim = 0.0f;
+
+        if(v_cmd > 0.0f)    trim += X_BASE_TRIM;
+        else if(v_cmd < 0.0f)   trim -= X_BASE_TRIM;
+
+        trim += computeXSpeedTrim(v_cmd);
+        return clampf_local(trim, -X_TRIM_MAX, X_TRIM_MAX);
+}
 
 void handleSerialInput() {
     while (Serial.available() > 0) {
@@ -220,8 +280,6 @@ void handleSerialInput() {
     }
 }
 
-
-
 void setup() {
     Serial.begin(115200);
     delay(500);
@@ -234,21 +292,19 @@ void setup() {
     attachInterrupt(digitalPinToInterrupt(LEFT_ENCODER_A), leftISR, CHANGE);
     attachInterrupt(digitalPinToInterrupt(RIGHT_ENCODER_A), rightISR, CHANGE);
 
-    // Initialize DAC
     if (!wheelchair.begin()) {
         Serial.println("MCP4728 not found");
         while (1) delay(10);
     }
 
-    // Configure linear mapping parameters
     wheelchair.setCommands(MAX_LINEAR_CMD, MAX_ANGULAR_CMD);
     wheelchair.setVoltageSpans(Y_SPAN_V, X_SPAN_V);
     wheelchair.setDeadbands(Y_DEADBAND_V, X_DEADBAND_V);
-    // Set neutral output at startup
     wheelchair.setNeutral();
 
     pidY.begin(PIDY_KP, PIDY_KI, PIDY_KD, Y_PID_MIN, Y_PID_MAX);
     pidW.begin(PIDW_KP, PIDW_KI, PIDW_KD, X_PID_MIN, X_PID_MAX);
+    pidHeading.begin(PIDH_KP, PIDH_KI, PIDH_KD, HEADING_W_REF_MIN, HEADING_W_REF_MAX);
 
     last_log_time = millis();
     last_imu_time = millis();
@@ -263,38 +319,89 @@ void loop() {
     // 1. Read incoming cmd_vel packets from serial
     handleSerialInput();
 
-    // 2. Safety timeout: stop if no command received
+    // 2. Safety timeout
     if (millis() - cmdVelReceiver.getLastCmdMs() > CMD_TIMEOUT_MS) {
         cmdVelReceiver.setZero();
         resetControllers();
+        heading_initialized = false;
+        heading_mode_active = false;
     }
 
-    // 3. Read command references
+    // 3. Read references
     v_ref = cmdVelReceiver.getVRef();
 
-    // IMPORTANT:
-    // ROS2: +angular.z = left turn (CCW)
+    // ROS2: +angular.z = left turn
     // Wheelchair X voltage: + = right turn
-    // → invert sign here to match behavior
     w_ref = -cmdVelReceiver.getWRef();
 
-    // 4. Update IMU (for publishing only)
+    // 4. Update IMU
     um7_update();
     if (um7_get_sample(imu_sample)) {
         imu_ok = imu_sample.valid;
         if (imu_ok) {
-            // Apply sign correction to match ROS2 convention
-            imu_sample.wz = IMU_WZ_SIGN * imu_sample.wz;
+            imu_wz_ctrl = -imu_sample.wz;
+            current_yaw = -quaternionToYaw(imu_sample);
             last_imu_time = millis();
         }
     }
 
-    // IMU timeout handling
     if (millis() - last_imu_time > IMU_TIMEOUT_MS) {
         imu_ok = false;
     }
 
-    // 5. Update encoder-based velocity and run control
+    // 5. Pure neutral when command is effectively zero
+    if (fabsf(v_ref) <= SPEED_ENABLE_THRESHOLD &&
+        fabsf(w_ref) <= TURN_ENABLE_THRESHOLD) {
+        resetControllers();
+        heading_initialized = false;
+        heading_mode_active = false;
+        wheelchair.setNeutral();
+
+        if (millis() - last_log_time > LOG_INTERVAL_MS) {
+            last_log_time = millis();
+
+            sensorPublisher.publishEncoder(
+                encoderReader.getLeftCount(),
+                encoderReader.getRightCount(),
+                millis()
+            );
+
+            if (imu_ok) {
+                sensorPublisher.publishImu(imu_sample);
+            }
+        }
+        return;
+    }
+
+    // 6. Motion mode selection
+    const bool straight_mode =
+        (fabsf(v_ref) > SPEED_ENABLE_THRESHOLD) &&
+        (fabsf(w_ref) <= TURN_ENABLE_THRESHOLD) &&
+        imu_ok;
+
+    if (straight_mode) {
+        if (!heading_mode_active) {
+            pidW.reset();
+            pidHeading.reset();
+            heading_initialized = false;
+            heading_mode_active = true;
+        }
+
+        if (!heading_initialized) {
+            heading_target = current_yaw;
+            heading_initialized = true;
+        }
+    } else {
+        if (heading_mode_active) {
+            pidW.reset();
+            pidHeading.reset();
+            heading_mode_active = false;
+        }
+        heading_initialized = false;
+        heading_hold_w_ref = 0.0f;
+    }
+
+    // 7. Update encoder-based velocity and run control
     if (encoderReader.readSnapshot(curr_snap, ENCODER_INTERVAL_MS)) {
         if (has_prev_snap) {
             encoderReader.updateVelocitiesFromSnapshot(prev_snap, curr_snap);
@@ -302,44 +409,59 @@ void loop() {
             float dt = (curr_snap.time_ms - prev_snap.time_ms) / 1000.0f;
             v_meas = encoderReader.getVBody();
             w_meas_encoder = encoderReader.getWBody();
-            w_meas_pid = -w_meas_encoder;
 
-            // Feedforward frrom linear mapping
+            if (imu_ok)
+                w_meas_pid = imu_wz_ctrl;
+            else
+                w_meas_pid = -w_meas_encoder;
+
+            // Feedforward from linear mapping
             wheelchair.commandToVoltage(v_ref, w_ref, y_ff, x_ff);
 
-            // Y-axis PID (linear velocity)
-            if(fabsf(v_ref) > SPEED_ENABLE_THRESHOLD)
+            // Add trim only during motion
+            x_ff += computeXTotalTrim(v_ref, w_ref);
+
+            // Y-axis PID
+            if (fabsf(v_ref) > SPEED_ENABLE_THRESHOLD)
                 y_corr = pidY.update(v_ref, v_meas, dt);
-            else{
+            else {
                 y_corr = 0.0f;
                 pidY.reset();
             }
-            // X-axis PID (angular velocity)
-            if(fabsf(w_ref) > TURN_ENABLE_THRESHOLD)
+
+            // X-axis control
+            if (straight_mode) {
+                const float heading_error = wrapAngle(heading_target - current_yaw);
+                heading_hold_w_ref = pidHeading.update(0.0f, -heading_error, dt);
+                x_corr = pidW.update(heading_hold_w_ref, w_meas_pid, dt);
+            } else if (fabsf(v_ref) > SPEED_ENABLE_THRESHOLD ||
+                       fabsf(w_ref) > TURN_ENABLE_THRESHOLD) {
+                heading_hold_w_ref = 0.0f;
                 x_corr = pidW.update(w_ref, w_meas_pid, dt);
-            else{
+            } else {
+                heading_hold_w_ref = 0.0f;
                 x_corr = 0.0f;
                 pidW.reset();
+                pidHeading.reset();
             }
 
-            //Final command = feedforward + correction
+            // Final command
             y_cmd = y_ff + y_corr;
             x_cmd = x_ff + x_corr;
 
             wheelchair.writeXYVoltages(y_cmd, x_cmd);
         }
-        else{
-            //First snapshot: just apply feedforward only
+        else {
             wheelchair.commandToVoltage(v_ref, w_ref, y_cmd, x_cmd);
+            x_cmd += computeXTotalTrim(v_ref, w_ref);
             wheelchair.writeXYVoltages(y_cmd, x_cmd);
         }
 
         prev_snap = curr_snap;
         has_prev_snap = true;
     }
-    
 
-    // 6. Publish encoder and IMU data
+    // 8. Publish encoder and IMU data
     if (millis() - last_log_time > LOG_INTERVAL_MS) {
         last_log_time = millis();
 

@@ -1,16 +1,16 @@
 #include <Arduino.h>
 
 // GPIO
-const int LEFT_ENCODER_A = 4;
-const int LEFT_ENCODER_B = 5;
+const int LEFT_ENCODER_A = 35;
+const int LEFT_ENCODER_B = 36;
 
-const int RIGHT_ENCODER_A = 16;
-const int RIGHT_ENCODER_B = 17;
+const int RIGHT_ENCODER_A = 47;
+const int RIGHT_ENCODER_B = 48;
 
 // Direction Sign Correction
 // Need real-life experiment to determine which sign is correct for each encoder
 const int LEFT_SIGN = 1;
-const int RIGHT_SIGN = 1;
+const int RIGHT_SIGN = -1;
 
 // Encoder Counters
 volatile long left_count = 0;

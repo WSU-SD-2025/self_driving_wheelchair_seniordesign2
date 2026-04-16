@@ -108,7 +108,7 @@
   <!-- LiDAR                                                     -->
   <!-- ========================================================= -->
 
-  <link name="lidar_link">
+  <link name="ldlidar_base">
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
@@ -120,7 +120,7 @@
 
   <joint name="lidar_joint" type="fixed">
     <parent link="base_link"/>
-    <child link="lidar_link"/>
+    <child link="ldlidar_base"/>
     <origin xyz="${lidar_x_v} ${lidar_y_v} ${lidar_z_v}"
             rpy="${lidar_roll_v} ${lidar_pitch_v} ${lidar_yaw_v}"/>
   </joint>
