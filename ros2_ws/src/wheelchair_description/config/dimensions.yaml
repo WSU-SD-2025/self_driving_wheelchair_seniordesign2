@@ -2,18 +2,18 @@
 # Temporary placeholder values (0.50)
 
 wheelchair:
-  base_length: 0.50   # The front-to-back length of the wheelchair frame (x-axis)
-  base_width: 0.50    # The left-to-right width of the wheelchair frame  (y-axis)
-  base_height: 0.50   # The vertical thickness of the chassis box (z-axis)
-  base_mass: 0.50     # Total mass of the base_link
+  base_length: 0.807   # The front-to-back length of the wheelchair frame (x-axis)
+  base_width: 0.655    # The left-to-right width of the wheelchair frame  (y-axis)
+  base_height: 0.260   # The vertical thickness of the chassis box (z-axis)
+  base_z: 0.171
 
-  wheel_radius: 0.50  # for odometry calculations
-  wheel_width: 0.50   # The thickness of the wheel
+  wheel_radius: 0.171  # for odometry calculations
+  wheel_width: 0.070   # The thickness of the wheel
 
 # x: forward-backward from base center
 # y: left-right
 # z: upward, downward
 sensors:
-  realsense_xyz: [0.50, 0.50, 0.50]   # The position of the camera center relative to base_link
-  lidar_xyz: [0.50, 0.50, 0.50]
-  imu_xyz: [0.50, 0.50, 0.50]
+  realsense_xyz: [0.32, 0.00, 0.47]   # The position of the camera center relative to base_link
+  lidar_xyz: [0.680, 0.2175, 0.471]
+  imu_xyz: [0.325, 0.0, 0.342]

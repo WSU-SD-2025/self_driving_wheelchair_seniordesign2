@@ -187,7 +187,7 @@ local_costmap:
       width: 6
       height: 6
       resolution: 0.05
-      footprint: "[ [0.45, 0.30], [0.45, -0.30], [-0.45, -0.30], [-0.45, 0.30]]"
+      footprint: "[ [0.4035, 0.3275], [0.4035, -0.3275], [-0.4035, -0.3275], [-0.4035, 0.3275]]"
       footprint_padding: 0.01
       footprint_clearing_enabled: True
       plugins: ["obstacle_layer", "denoise_layer", "inflation_layer"]
@@ -229,7 +229,7 @@ global_costmap:
       height: 30
       origin_x: 0.0
       origin_y: 0.0
-      footprint: "[ [0.40, 0.28], [0.40, -0.28], [-0.40, -0.28], [-0.40, 0.28]]"
+      footprint: "[ [0.4035, 0.3275], [0.4035, -0.3275], [-0.4035, -0.3275], [-0.4035, 0.3275]]"
       footprint_padding: 0.01
       footprint_clearing_enabled: True
       resolution: 0.05
@@ -383,16 +383,16 @@ collision_monitor:
 
     PolygonSlow:
       type: "polygon"
-      points: [0.90, 0.50, 0.90, -0.50, 0.0, -0.50, 0.0, 0.50]
+      points: [0.5535, 0.4775, 0.5535, -0.4775, -0.5535, -0.4775, -0.5535, 0.4775]
       action_type: "slowdown"
       min_points: 4
-      slowdown_ratio: 0.15
+      slowdown_ratio: 0.10
       visualize: True
       polygon_pub_topic: "polygon_slowdown"
 
     PolygonStop:
       type: "polygon"
-      points: [0.60, 0.40, 0.60, -0.40, 0.0, -0.40, 0.0, 0.40]
+      points: [0.4535, 0.3775, 0.4535, -0.3775, -0.4535, -0.3775, -0.4535, 0.3775]
       action_type: "stop"
       min_points: 4
       visualize: True
