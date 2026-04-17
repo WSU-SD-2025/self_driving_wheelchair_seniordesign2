@@ -14,7 +14,7 @@ bt_navigator:
       - nav2_smooth_path_action_bt_node
       - nav2_follow_path_action_bt_node
       - nav2_spin_action_bt_node
-      - nav2_wait_action_bt_node
+      - nav2_wait_action_bt_node 
       - nav2_assisted_teleop_action_bt_node
       - nav2_back_up_action_bt_node
       - nav2_drive_on_heading_bt_node
@@ -206,8 +206,10 @@ local_costmap:
           data_type: LaserScan
           marking: True
           clearing: True
-          obstacle_range: 10.0
-          raytrace_range: 12.0
+          obstacle_min_range: 0.20
+          raytrace_min_range: 0.20
+          obstacle_range: 6.0
+          raytrace_range: 8.0
           max_obstacle_height: 2.5
           inf_is_valid: True
 
@@ -251,11 +253,13 @@ global_costmap:
           data_type: "LaserScan"
           marking: True
           clearing: True
+          obstacle_min_range: 0.20
+          raytrace_min_range: 0.20
           obstacle_range: 10.0
           raytrace_range: 12.0
           max_obstacle_height: 2.5
           inf_is_valid: True
-          observation_persistence: 1.0
+          observation_persistence: 0.5
           expected_update_rate: 0.0
           
       
@@ -282,7 +286,7 @@ map_saver:
 
 planner_server:
   ros__parameters:
-    expected_planner_frequency: 15.0              # Smac2D (Stable even at 2~3HZ) (Low resource & High stability focus)
+    expected_planner_frequency: 10.0              # Smac2D (Stable even at 2~3HZ) (Low resource & High stability focus)
     use_sim_time: False
     planner_plugins: ["GridBased"]
     GridBased:

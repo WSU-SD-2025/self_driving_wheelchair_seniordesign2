@@ -68,9 +68,9 @@ const float X_DEADBAND_V = 0.05f;
 // =========================
 // X trim settings
 // =========================
-const float X_BASE_TRIM        = 0.002f;
+const float X_BASE_TRIM        = 0.004f;
 const float X_TRIM_START_SPEED = 0.20f;   // m/s
-const float X_TRIM_GAIN        = 0.0215f;
+const float X_TRIM_GAIN        = 0.022f;
 const float X_TRIM_MAX         = 0.0086f;
 
 // =========================

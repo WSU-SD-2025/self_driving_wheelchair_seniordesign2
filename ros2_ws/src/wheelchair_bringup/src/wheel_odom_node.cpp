@@ -15,7 +15,7 @@ WheelOdomNode::WheelOdomNode()
       base_frame_("base_link"),
       encoder_topic_("/encoder/raw"),
       odom_topic_("/wheel/odom"),
-      publish_tf_(true),
+      publish_tf_(false),
       initialized_(false),
       prev_left_count_(0),
       prev_right_count_(0),
@@ -33,7 +33,7 @@ WheelOdomNode::WheelOdomNode()
     this->declare_parameter<std::string>("base_frame", "base_link");
     this->declare_parameter<std::string>("encoder_topic", "/encoder/raw");
     this->declare_parameter<std::string>("odom_topic", "/wheel/odom");
-    this->declare_parameter<bool>("publish_tf", true);
+    this->declare_parameter<bool>("publish_tf", false);
 
     left_cpr_ = this->get_parameter("left_cpr").as_double();
     right_cpr_ = this->get_parameter("right_cpr").as_double();

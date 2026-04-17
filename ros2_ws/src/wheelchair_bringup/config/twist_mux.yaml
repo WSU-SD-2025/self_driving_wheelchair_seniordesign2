@@ -1,5 +1,8 @@
 twist_mux:
   ros__parameters:
+    #output_topic: /cmd_vel
+
+    
     topics:
       manual:
         topic: /cmd_vel/manual
@@ -10,5 +13,3 @@ twist_mux:
         topic: /cmd_vel/nav
         timeout: 0.5
         priority: 10
-
-    locks: []
