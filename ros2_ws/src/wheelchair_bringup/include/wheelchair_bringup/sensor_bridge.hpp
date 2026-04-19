@@ -9,7 +9,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 #include <geometry_msgs/msg/twist.hpp>
-#include <std_msgs/msg/int64_multi_array.hpp>
+#include "wheelchair_bringup/msg/encoder_stamped.hpp"
 
 
 class SensorBridge : public rclcpp::Node{
@@ -76,7 +76,7 @@ class SensorBridge : public rclcpp::Node{
         rclcpp::Time last_send_time_;
 
         // ROS2 interfaces
-        rclcpp::Publisher<std_msgs::msg::Int64MultiArray>::SharedPtr encoder_pub_;
+        rclcpp::Publisher<wheelchair_bringup::msg::EncoderStamped>::SharedPtr encoder_pub_;
         rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_pub_;
         rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_sub_;
 

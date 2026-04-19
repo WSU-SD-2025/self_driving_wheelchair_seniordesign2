@@ -101,17 +101,17 @@ def generate_launch_description():
         parameters=[nav2_yaml],
     )
 
-    twist_mux = Node(
-        package='twist_mux',
-        executable='twist_mux',
-        name='twist_mux',
-        output='screen',
-        parameters=[twist_mux_yaml],
-        remappings=[
-            ('cmd_vel_out', '/cmd_vel/raw'),
-            ('/cmd_vel_out', '/cmd_vel/raw'),
-        ],
-    )
+    # twist_mux = Node(
+    #     package='twist_mux',
+    #     executable='twist_mux',
+    #     name='twist_mux',
+    #     output='screen',
+    #     parameters=[twist_mux_yaml],
+    #     remappings=[
+    #         ('cmd_vel_out', '/cmd_vel/raw'),
+    #         ('/cmd_vel_out', '/cmd_vel/raw'),
+    #     ],
+    # )
 
     velocity_smoother = Node(
         package='nav2_velocity_smoother',
@@ -120,8 +120,8 @@ def generate_launch_description():
         output='screen',
         parameters=[nav2_yaml],
         remappings=[
-            ('cmd_vel', '/cmd_vel/raw'),
-            ('/cmd_vel', '/cmd_vel/raw'),
+            ('cmd_vel', '/cmd_vel/nav'),
+            ('/cmd_vel', '/cmd_vel/nav'),
             ('cmd_vel_smoothed', '/cmd_vel/smooth'),
             ('/cmd_vel_smoothed', '/cmd_vel/smooth'),
         ],
@@ -133,6 +133,12 @@ def generate_launch_description():
         name='collision_monitor',
         output='screen',
         parameters=[nav2_yaml],
+        remappings=[
+            ('cmd_vel_in', '/cmd_vel/smooth'),
+            ('/cmd_vel_in', '/cmd_vel/smooth'),
+            ('cmd_vel_out', '/cmd_vel'),
+            ('/cmd_vel_out', '/cmd_vel'),
+        ],
     )
 
     lifecycle_manager_navigation = Node(
@@ -153,7 +159,7 @@ def generate_launch_description():
         behavior_server,
         bt_navigator,
         waypoint_follower,
-        twist_mux,
+        # twist_mux,
         velocity_smoother,
         collision_monitor,
         lifecycle_manager_navigation,

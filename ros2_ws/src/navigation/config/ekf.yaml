@@ -1,7 +1,7 @@
 ekf_filter_odom:
   ros__parameters:
     use_sim_time: false
-    frequency: 30.0
+    frequency: 50.0
     sensor_timeout: 0.1
     two_d_mode: true
     publish_tf: true
@@ -39,8 +39,8 @@ ekf_filter_odom:
                   false, false, false,
                   false, false, false]
 
-    transform_time_offset: 0.0
-    transform_timeout: 0.0
+    transform_time_offset: 0.07
+    transform_timeout: 0.5
 
 
 

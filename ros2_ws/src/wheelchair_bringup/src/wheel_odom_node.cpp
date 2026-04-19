@@ -4,6 +4,7 @@
 #include <stdexcept>
 #include <algorithm>
 #include <cstdlib>
+#include "wheelchair_bringup/msg/encoder_stamped.hpp"
 
 WheelOdomNode::WheelOdomNode()
     : Node("wheel_odom_node"),
@@ -47,7 +48,7 @@ WheelOdomNode::WheelOdomNode()
     publish_tf_ = this->get_parameter("publish_tf").as_bool();
 
     odom_pub_ = this->create_publisher<nav_msgs::msg::Odometry>(odom_topic_, 50);
-    encoder_sub_ = this->create_subscription<std_msgs::msg::Int64MultiArray>(
+    encoder_sub_ = this->create_subscription<wheelchair_bringup::msg::EncoderStamped>(
         encoder_topic_, 50,
         std::bind(&WheelOdomNode::encoderCallback, this, std::placeholders::_1));
 
@@ -61,18 +62,13 @@ double WheelOdomNode::wrapAngle(double a)
     return std::atan2(std::sin(a), std::cos(a));
 }
 
-void WheelOdomNode::encoderCallback(const std_msgs::msg::Int64MultiArray::SharedPtr msg)
+void WheelOdomNode::encoderCallback(const wheelchair_bringup::msg::EncoderStamped::SharedPtr msg)
 {
-    if (msg->data.size() < 3) {
-        RCLCPP_WARN_THROTTLE(
-            this->get_logger(), *this->get_clock(), 2000,
-            "Encoder raw message size < 3");
-        return;
-    }
 
-    const int64_t left_count = msg->data[0];
-    const int64_t right_count = msg->data[1];
-    const int64_t time_ms = msg->data[2];
+    const int64_t left_count = msg->left_count;
+    const int64_t right_count = msg->right_count;
+    const int64_t time_ms = msg->mcu_time_ms;
+    const rclcpp::Time ros_stamp = msg->header.stamp;
 
     if (!initialized_) {
         prev_left_count_ = left_count;
@@ -126,10 +122,9 @@ void WheelOdomNode::encoderCallback(const std_msgs::msg::Int64MultiArray::Shared
         wz = 0.0;
     }
 
-    const auto now = this->now();
 
     nav_msgs::msg::Odometry odom_msg;
-    odom_msg.header.stamp = now;
+    odom_msg.header.stamp = ros_stamp;
     odom_msg.header.frame_id = odom_frame_;
     odom_msg.child_frame_id = base_frame_;
 
@@ -168,7 +163,7 @@ void WheelOdomNode::encoderCallback(const std_msgs::msg::Int64MultiArray::Shared
 
     if (publish_tf_) {
         geometry_msgs::msg::TransformStamped tf_msg;
-        tf_msg.header.stamp = now;
+        tf_msg.header.stamp = ros_stamp;
         tf_msg.header.frame_id = odom_frame_;
         tf_msg.child_frame_id = base_frame_;
 

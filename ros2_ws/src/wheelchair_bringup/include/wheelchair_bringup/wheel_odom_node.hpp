@@ -8,13 +8,14 @@
 #include <std_msgs/msg/int64_multi_array.hpp>
 #include <geometry_msgs/msg/transform_stamped.hpp>
 #include <tf2_ros/transform_broadcaster.h>
+#include "wheelchair_bringup/msg/encoder_stamped.hpp"
 
 class WheelOdomNode : public rclcpp::Node{
     public:
         WheelOdomNode();
 
     private:
-        void encoderCallback(const std_msgs::msg::Int64MultiArray::SharedPtr msg);
+        void encoderCallback(const wheelchair_bringup::msg::EncoderStamped::SharedPtr msg);
         double wrapAngle(double a);
 
         // Params
@@ -43,7 +44,7 @@ class WheelOdomNode : public rclcpp::Node{
         double theta_;
 
         // ROS
-        rclcpp::Subscription<std_msgs::msg::Int64MultiArray>::SharedPtr encoder_sub_;
+        rclcpp::Subscription<wheelchair_bringup::msg::EncoderStamped>::SharedPtr encoder_sub_;
         rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_;
         std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
 };

@@ -15,5 +15,5 @@ wheelchair:
 # z: upward, downward
 sensors:
   realsense_xyz: [0.32, 0.00, 0.47]   # The position of the camera center relative to base_link
-  lidar_xyz: [0.680, 0.2175, 0.471]
+  lidar_xyz: [0.360, 0.28, 0.43]
   imu_xyz: [0.325, 0.0, 0.342]

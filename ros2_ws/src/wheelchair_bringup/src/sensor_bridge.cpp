@@ -1,4 +1,5 @@
 #include "wheelchair_bringup/sensor_bridge.hpp"
+#include "wheelchair_bringup/msg/encoder_stamped.hpp"
 
 #include <cmath>
 #include <fcntl.h>
@@ -70,7 +71,7 @@ SensorBridge::SensorBridge()
     resend_period_sec_ = this->get_parameter("resend_period_sec").as_double();
 
     // Create publishers
-    encoder_pub_ = this->create_publisher<std_msgs::msg::Int64MultiArray>(encoder_topic_, 50);
+    encoder_pub_ = this->create_publisher<wheelchair_bringup::msg::EncoderStamped>(encoder_topic_, 50);
     imu_pub_ = this->create_publisher<sensor_msgs::msg::Imu>(imu_topic_, 50);
 
     // Create Subscriber
@@ -387,11 +388,13 @@ void SensorBridge::handleImuLine(const std::string& line){
 
 void SensorBridge::publishEncoderRaw(const int64_t left_count, const int64_t right_count, const int64_t time_ms){
     
-    std_msgs::msg::Int64MultiArray msg;
-    msg.data.reserve(3);
-    msg.data.push_back(left_count);
-    msg.data.push_back(right_count);
-    msg.data.push_back(time_ms);
+    wheelchair_bringup::msg::EncoderStamped msg;
+    msg.header.stamp = this->get_clock()->now();
+    msg.header.frame_id = "";
+
+    msg.left_count = left_count;
+    msg.right_count = right_count;
+    msg.mcu_time_ms = time_ms;
 
     encoder_pub_->publish(msg);
 }
