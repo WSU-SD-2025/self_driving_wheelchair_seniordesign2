@@ -65,6 +65,8 @@ const float X_SPAN_V = 0.70f;
 const float Y_DEADBAND_V = 0.05f;
 const float X_DEADBAND_V = 0.05f;
 
+const float Y_MIN_EFFECTIVE_DELTA_FWD = 0.242f;
+
 // =========================
 // X trim settings
 // =========================
@@ -417,6 +419,15 @@ void loop() {
 
             // Feedforward from linear mapping
             wheelchair.commandToVoltage(v_ref, w_ref, y_ff, x_ff);
+            
+            // Linear deadband compensation (forward only)
+            if(v_ref > SPEED_ENABLE_THRESHOLD) {
+            	float y_delta = y_ff - Y_NEUTRAL;
+            	
+            	if(y_delta > 0.0f && y_delta < Y_MIN_EFFECTIVE_DELTA_FWD){
+            		y_ff = Y_NEUTRAL + Y_MIN_EFFECTIVE_DELTA_FWD;
+            	}
+            }
 
             // Add trim only during motion
             x_ff += computeXTotalTrim(v_ref, w_ref);
@@ -453,6 +464,15 @@ void loop() {
         }
         else {
             wheelchair.commandToVoltage(v_ref, w_ref, y_cmd, x_cmd);
+            
+            // Linear deadband compensation (forward only)
+            if(v_ref > SPEED_ENABLE_THRESHOLD){
+            	float y_delta = y_cmd - Y_NEUTRAL;
+            	if(y_delta > 0.0f && y_delta < Y_MIN_EFFECTIVE_DELTA_FWD) {
+            		y_cmd = Y_NEUTRAL + Y_MIN_EFFECTIVE_DELTA_FWD;
+            	}
+            }
+            
             x_cmd += computeXTotalTrim(v_ref, w_ref);
             wheelchair.writeXYVoltages(y_cmd, x_cmd);
         }

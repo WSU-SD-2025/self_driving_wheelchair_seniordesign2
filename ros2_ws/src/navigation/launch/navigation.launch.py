@@ -122,24 +122,24 @@ def generate_launch_description():
         remappings=[
             ('cmd_vel', '/cmd_vel/nav'),
             ('/cmd_vel', '/cmd_vel/nav'),
-            ('cmd_vel_smoothed', '/cmd_vel/smooth'),
-            ('/cmd_vel_smoothed', '/cmd_vel/smooth'),
+            ('cmd_vel_smoothed', '/cmd_vel'),
+            ('/cmd_vel_smoothed', '/cmd_vel'),
         ],
     )
 
-    collision_monitor = Node(
-        package='nav2_collision_monitor',
-        executable='collision_monitor',
-        name='collision_monitor',
-        output='screen',
-        parameters=[nav2_yaml],
-        remappings=[
-            ('cmd_vel_in', '/cmd_vel/smooth'),
-            ('/cmd_vel_in', '/cmd_vel/smooth'),
-            ('cmd_vel_out', '/cmd_vel'),
-            ('/cmd_vel_out', '/cmd_vel'),
-        ],
-    )
+    # collision_monitor = Node(
+    #     package='nav2_collision_monitor',
+    #     executable='collision_monitor',
+    #     name='collision_monitor',
+    #     output='screen',
+    #     parameters=[nav2_yaml],
+    #     remappings=[
+    #         ('cmd_vel_in', '/cmd_vel/smooth'),
+    #         ('/cmd_vel_in', '/cmd_vel/smooth'),
+    #         ('cmd_vel_out', '/cmd_vel'),
+    #         ('/cmd_vel_out', '/cmd_vel'),
+    #     ],
+    # )
 
     lifecycle_manager_navigation = Node(
         package='nav2_lifecycle_manager',
@@ -161,6 +161,5 @@ def generate_launch_description():
         waypoint_follower,
         # twist_mux,
         velocity_smoother,
-        collision_monitor,
         lifecycle_manager_navigation,
     ])
