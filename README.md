@@ -1,6 +1,4 @@
-# Installation
-
-## Instructions
+# Installation Instructions
 
 1. Clone the github respository
 2. Within the repository, navigate to /ros2_ws/src/wheelchair_description/
@@ -19,9 +17,9 @@ Assuming there are no errors, the system can no be started by executing the foll
 
 Rviz2 can be used to visualize the wheelchair's sensors and to give it goals. In Rviz2, set the "Fixed Frame" to "odom", then add visualizations by topic.
 
-## Troubleshooting
+# Troubleshooting
 
-### AssertionError: could not find template: idl__type_support.hpp.em
+## AssertionError: could not find template: idl__type_support.hpp.em
 
 If you get this error when trying to build the package with the colcon build command, it is probably because you have an older rosidl package that colcon build is using. In our experience, this happens when using ros2 inside a docker container running ubuntu. Check if there is more than one place that ros packages are sourced and if so, remove the older rosidl packages from those sourced folders. We removed all duplicate, older rosidl packages.
 
@@ -34,7 +32,7 @@ Docker container with ros2 humble installed sources packages from two different 
 
 The package in "/opt/ros/humble/install/share/" is older so it is removed from that folder (highly recommend moving out of the folder instead of deleting it).
 
-### Could not find /meshes folder
+## Could not find /meshes folder
 
 See step 3 in installation instructions. Some folders (like /meshes) must be added manually by the user.
 
@@ -42,6 +40,6 @@ See step 3 in installation instructions. Some folders (like /meshes) must be add
 
 Most likely cause is not sourcing the installation before launch. Execute the command "source install/setup.bash" while inside the /ros2_ws directory.
 
-### Could not open serial port /dev/ttyACM0: No such file or directory
+## Could not open serial port /dev/ttyACM0: No such file or directory
 
 If you encounter this error after launch, this means the system is not detecting the ESP32 hardware. Ensure you have a good usb connection to the ESP32 board.
