@@ -11,7 +11,7 @@
 6. Navigate to /ros2_ws
 7. Execute the command "colcon build"
 
-Assuming there are no errors, the system can no be started by executing the following commands
+Assuming there are no errors, the system can be started by executing the following commands
 1. source install/setup.bash
 2. ros2 launch wheelchair_bringup self_driving.launch.py
 
