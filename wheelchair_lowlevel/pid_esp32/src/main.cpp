@@ -26,6 +26,10 @@ const int RIGHT_ENCODER_B = 48;
 const int LEFT_SIGN  = 1;
 const int RIGHT_SIGN = -1;
 
+// Feature Flags
+const bool USE_IMU_HEADING_PID = false;
+const bool USE_IMU_WZ_FOR_TURN = false;
+
 // =========================
 // Encoder & wheelchair params
 // =========================
@@ -377,6 +381,7 @@ void loop() {
 
     // 6. Motion mode selection
     const bool straight_mode =
+    	USE_IMU_HEADING_PID &&
         (fabsf(v_ref) > SPEED_ENABLE_THRESHOLD) &&
         (fabsf(w_ref) <= TURN_ENABLE_THRESHOLD) &&
         imu_ok;
@@ -412,7 +417,7 @@ void loop() {
             v_meas = encoderReader.getVBody();
             w_meas_encoder = encoderReader.getWBody();
 
-            if (imu_ok)
+            if (USE_IMU_WZ_FOR_TURN && imu_ok)
                 w_meas_pid = imu_wz_ctrl;
             else
                 w_meas_pid = -w_meas_encoder;
