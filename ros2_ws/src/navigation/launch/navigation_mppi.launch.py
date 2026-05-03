@@ -1,17 +1,21 @@
 import os
+
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
+from launch.actions import IncludeLaunchDescription, TimerAction
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
-from launch_ros.actions import ComposableNodeContainer
+from launch_ros.actions import ComposableNodeContainer, LoadComposableNodes
 from launch_ros.descriptions import ComposableNode
-from launch_ros.actions import LoadComposableNodes
+
 
 def generate_launch_description():
     nav2_yaml = os.path.join(
         get_package_share_directory('navigation'),
         'config',
-        'nav2_params.yaml'
+        'nav2_mppi_wheelchair.yaml'
     )
+
 
     ldlidar_param_file = os.path.join(
         get_package_share_directory('wheelchair_bringup'),
@@ -19,13 +23,6 @@ def generate_launch_description():
         'ldlidar.yaml'
     )
 
-    twist_mux_yaml = os.path.join(
-        get_package_share_directory('wheelchair_bringup'),
-        'config',
-        'twist_mux.yaml'
-    )
-
-    # LD LiDAR container
     ldlidar_container = ComposableNodeContainer(
         name='ldlidar_container',
         namespace='',
@@ -34,7 +31,6 @@ def generate_launch_description():
         output='screen',
     )
 
-    # LD LiDAR component
     ldlidar_component = ComposableNode(
         package='ldlidar_component',
         plugin='ldlidar::LdLidarComponent',
@@ -43,11 +39,11 @@ def generate_launch_description():
         extra_arguments=[{'use_intra_process_comms': True}],
     )
 
-    # Load component into container
     load_ldlidar = LoadComposableNodes(
         target_container='ldlidar_container',
         composable_node_descriptions=[ldlidar_component]
     )
+
 
     controller_server = Node(
         package='nav2_controller',
@@ -101,18 +97,6 @@ def generate_launch_description():
         parameters=[nav2_yaml],
     )
 
-    # twist_mux = Node(
-    #     package='twist_mux',
-    #     executable='twist_mux',
-    #     name='twist_mux',
-    #     output='screen',
-    #     parameters=[twist_mux_yaml],
-    #     remappings=[
-    #         ('cmd_vel_out', '/cmd_vel/raw'),
-    #         ('/cmd_vel_out', '/cmd_vel/raw'),
-    #     ],
-    # )
-
     velocity_smoother = Node(
         package='nav2_velocity_smoother',
         executable='velocity_smoother',
@@ -122,8 +106,8 @@ def generate_launch_description():
         remappings=[
             ('cmd_vel', '/cmd_vel/nav'),
             ('/cmd_vel', '/cmd_vel/nav'),
-            ('cmd_vel_smoothed', '/cmd_vel'),
-            ('/cmd_vel_smoothed', '/cmd_vel'),
+            ('cmd_vel_smoothed', '/cmd_vel/smooth'),
+            ('/cmd_vel_smoothed', '/cmd_vel/smooth'),
         ],
     )
 
@@ -146,21 +130,26 @@ def generate_launch_description():
         executable='lifecycle_manager',
         name='lifecycle_manager_navigation',
         output='screen',
-        parameters=[nav2_yaml]
+        parameters=[nav2_yaml],
     )
 
     return LaunchDescription([
         ldlidar_container,
         load_ldlidar,
 
-        controller_server,
-        planner_server,
-        smoother_server,
-        behavior_server,
-        bt_navigator,
-        waypoint_follower,
-        # twist_mux,
-        velocity_smoother,
-        collision_monitor,
-        lifecycle_manager_navigation,
+
+        TimerAction(
+            period=3.0,
+            actions=[
+                controller_server,
+                planner_server,
+                smoother_server,
+                behavior_server,
+                bt_navigator,
+                waypoint_follower,
+                velocity_smoother,
+                collision_monitor,
+                lifecycle_manager_navigation,
+            ]
+        ),
     ])

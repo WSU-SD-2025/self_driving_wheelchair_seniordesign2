@@ -4,7 +4,7 @@ ekf_filter_odom:
     frequency: 50.0
     sensor_timeout: 0.1
     two_d_mode: true
-    publish_tf: false
+    publish_tf: true
     print_diagnostics: true
 
     # Frame settings
@@ -18,10 +18,10 @@ ekf_filter_odom:
     imu0_queue_size: 50
     imu0_nodelay: true
     imu0_differential: false
-    imu0_relative: false
+    imu0_relative: true
     imu0_remove_gravitational_acceleration: false
     imu0_config: [false, false, false,
-                  false, false, true,
+                  false, false, false,
                   false, false, false,
                   false, false, true,
                   false, false, false]
@@ -36,10 +36,10 @@ ekf_filter_odom:
     odom0_config: [false, false, false,
                   false, false, false,
                   true, false, false,
-                  false, false, true,
+                  false, false, false,
                   false, false, false]
 
-    transform_time_offset: 0.07
+    transform_time_offset: 0.0
     transform_timeout: 0.5
 
 

@@ -1,0 +1,29 @@
+# config/ldlidar_slam.yaml
+
+/**:
+  ros__parameters:
+    general:
+      debug_mode: false
+
+    comm:
+      serial_port: '/dev/ldlidar'
+      baudrate: 230400
+      timeout_msec: 1000
+
+    lidar:
+      model: 'LDLiDAR_LD19'
+      rot_verse: 'CCW'
+      units: 'M'
+      frame_id: 'ldlidar_base'
+
+      # Fixed scan size for SLAM Toolbox
+      bins: 455
+
+      # Ignore very close wheelchair body/frame reflections
+      range_min: 0.25
+      range_max: 15.0
+
+      # Keep same front crop as your working config
+      enable_angle_crop: true
+      angle_crop_min: 100.0
+      angle_crop_max: 260.0

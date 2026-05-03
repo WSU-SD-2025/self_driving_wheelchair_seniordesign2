@@ -2,8 +2,8 @@
 # Temporary placeholder values (0.50)
 
 wheelchair:
-  base_length: 0.807   # The front-to-back length of the wheelchair frame (x-axis)
-  base_width: 0.655    # The left-to-right width of the wheelchair frame  (y-axis)
+  base_length: 0.820   # The front-to-back length of the wheelchair frame (x-axis)
+  base_width: 0.640    # The left-to-right width of the wheelchair frame  (y-axis)
   base_height: 0.260   # The vertical thickness of the chassis box (z-axis)
   base_z: 0.171
 

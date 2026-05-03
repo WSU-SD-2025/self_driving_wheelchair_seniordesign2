@@ -401,27 +401,36 @@ void SensorBridge::publishEncoderRaw(const int64_t left_count, const int64_t rig
 
 
 void SensorBridge::publishImu(double qx, double qy, double qz, double qw, double wx, double wy, double wz, double ax, double ay, double az){
+    
+    (void)qx;
+    (void)qy;
+    (void)qz;
+    (void)qw;
+    
     sensor_msgs::msg::Imu imu_msg;
     imu_msg.header.stamp = this->get_clock()->now();
     imu_msg.header.frame_id = imu_frame_;
 
-    imu_msg.orientation.x = qx;
-    imu_msg.orientation.y = qy;
-    imu_msg.orientation.z = qz;
-    imu_msg.orientation.w = qw;
+    imu_msg.orientation.x = 0.0;
+    imu_msg.orientation.y = 0.0;
+    imu_msg.orientation.z = 0.0;
+    imu_msg.orientation.w = 1.0;
 
     imu_msg.angular_velocity.x = wx;
     imu_msg.angular_velocity.y = wy;
-    imu_msg.angular_velocity.z = - wz;
+
+    double wz_ros = -wz;
+    if(std::fabs(wz_ros) < 0.06)    wz_ros = 0.0;
+    imu_msg.angular_velocity.z = wz_ros;
 
     imu_msg.linear_acceleration.x = ax;
     imu_msg.linear_acceleration.y = ay;
     imu_msg.linear_acceleration.z = az;
 
     imu_msg.orientation_covariance = {
-        99999.0, 0.0, 0.0,
-        0.0, 99999.0, 0.0,
-        0.0, 0.0, 0.05
+        -1.0, 0.0, 0.0,
+        0.0, 0.0, 0.0,
+        0.0, 0.0, 0.0
     };
 
     imu_msg.angular_velocity_covariance = {

@@ -6,30 +6,30 @@
   <!-- ========================================================= -->
 
   <!-- Base body -->
-  <xacro:arg name="base_length" default="0.650"/>
-  <xacro:arg name="base_width"  default="0.447"/>
+  <xacro:arg name="base_length" default="0.820"/>
+  <xacro:arg name="base_width"  default="0.640"/>
   <xacro:arg name="base_height" default="0.260"/>
   <xacro:arg name="base_z"      default="0.171"/>
 
   <!-- LiDAR mount -->
-  <xacro:arg name="lidar_x" default="0.680"/>
-  <xacro:arg name="lidar_y" default="0.2175"/>
+  <xacro:arg name="lidar_x" default="0.500"/>
+  <xacro:arg name="lidar_y" default="0.210"/>
   <xacro:arg name="lidar_z" default="0.471"/>
   <xacro:arg name="lidar_roll"  default="0.0"/>
   <xacro:arg name="lidar_pitch" default="0.0"/> <!-- TODO: Figure out if pitch should be 6.9 deg up -->
   <xacro:arg name="lidar_yaw"   default="0.0"/>
 
   <!-- IMU mount -->
-  <xacro:arg name="imu_x" default="0.325"/>
-  <xacro:arg name="imu_y" default="0.0"/>
+  <xacro:arg name="imu_x" default="0.03"/>
+  <xacro:arg name="imu_y" default="0.015"/>
   <xacro:arg name="imu_z" default="0.342"/>
   <xacro:arg name="imu_roll"  default="0.0"/>
   <xacro:arg name="imu_pitch" default="0.0"/>
-  <xacro:arg name="imu_yaw"   default="0.0"/>
+  <xacro:arg name="imu_yaw"   default="6.28"/>
 
   <!-- Front caster wheels -->
-  <xacro:arg name="front_caster_x"      default="0.650"/>
-  <xacro:arg name="front_caster_y"      default="0.2235"/>
+  <xacro:arg name="front_caster_x"      default="0.450"/>
+  <xacro:arg name="front_caster_y"      default="0.210"/>
   <xacro:arg name="front_caster_z"      default="-0.079"/>
   <xacro:arg name="front_caster_radius" default="0.092"/>
   <xacro:arg name="front_caster_width"  default="0.058"/>
@@ -83,7 +83,7 @@
 
   <link name="base_link">
     <visual>
-      <origin xyz="0 0 ${float(base_height_v)/2.0}" rpy="0 0 0"/>
+      <origin xyz="0.110 0 ${float(base_height_v)/2.0}" rpy="0 0 0"/>
       <geometry>
         <box size="${base_length_v} ${base_width_v} ${base_height_v}"/>
       </geometry>
@@ -91,7 +91,7 @@
     </visual>
 
     <collision>
-      <origin xyz="0 0 ${float(base_height_v)/2.0}" rpy="0 0 0"/>
+      <origin xyz="0.110 0 ${float(base_height_v)/2.0}" rpy="0 0 0"/>
       <geometry>
         <box size="${base_length_v} ${base_width_v} ${base_height_v}"/>
       </geometry>
